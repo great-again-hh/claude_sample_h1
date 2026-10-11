@@ -1,21 +1,24 @@
 /* CSS = 페이지의 "꾸밈(색, 크기, 배치)".
    문법:  선택자 { 속성: 값; }
    선택자 종류:  태그이름(header) / .클래스(.post) / #아이디(#post-list)
-   HTML 은 거의 그대로인데 이 파일만 바꿔서 디자인과 레이아웃이 완전히 달라졌다. */
+   디자인: 네오 브루탈리즘 = 밝은 원색 + 굵은 검정 테두리 + 번지지 않는 딱딱한 그림자 */
 
-/* 변수: 네온 색을 한 곳에 모아둔다 */
+/* 변수: 색과 테두리·그림자 모양을 한 곳에 모아둔다 */
 :root {
-  --bg: #000000;
-  --main: #39ff14;  /* 네온 초록: 본문, 테두리 */
-  --point: #ff2bd6; /* 네온 핑크: 제목, 강조 */
-  --sub: #00f0ff;   /* 네온 하늘: 날짜, 링크 */
+  --bg: #fff4d6;     /* 크림색 바탕 */
+  --ink: #111111;    /* 글자와 테두리의 검정 */
+  --card: #ffffff;
+  --point: #ffd23f;  /* 노랑: 버튼, 강조 */
+  --sub: #b8e0ff;    /* 하늘: 사이드바 */
+  --line: 2px solid var(--ink);
+  --shadow: 4px 4px 0 var(--ink); /* 가로 4px, 세로 4px, 번짐 0 = 딱딱한 그림자 */
 }
 
-/* body 에 alt 클래스가 붙으면(JS가 붙임) 네온 색 조합이 바뀐다 */
+/* body 에 alt 클래스가 붙으면(JS가 붙임) 색 조합이 바뀐다 */
 body.alt {
-  --main: #00f0ff;
-  --point: #fff01f;
-  --sub: #ff2bd6;
+  --bg: #e8f7e4;
+  --point: #ff9fd0;
+  --sub: #ffd23f;
 }
 
 /* grid: 화면을 "칸"으로 나누는 배치 방법. 왼쪽 260px 사이드바 + 나머지(1fr) 본문 */
@@ -25,10 +28,11 @@ body {
   display: grid;
   grid-template-columns: 260px 1fr;
   grid-template-rows: 1fr auto;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
   line-height: 1.6;
   background: var(--bg);
-  color: var(--main);
+  color: var(--ink);
+  word-break: keep-all; /* 한글을 단어 중간에서 끊지 않는다 */
 }
 
 /* 왼쪽 사이드바: 스크롤해도 화면에 붙어 있다 */
@@ -39,25 +43,30 @@ header {
   height: 100vh;
   box-sizing: border-box; /* padding 을 height 안에 포함 */
   padding: 32px 24px;
-  border-right: 1px solid var(--main);
+  background: var(--sub);
+  border-right: var(--line);
 }
 
-/* text-shadow 를 글자와 같은 색으로 번지게 하면 네온 불빛처럼 보인다 */
-h1, h2, h3 {
-  color: var(--point);
-  text-shadow: 0 0 8px var(--point);
-}
+h1, h2, h3 { font-weight: 800; line-height: 1.25; }
 
-header h1 { margin: 0 0 32px; font-size: 1.6rem; }
+header h1 { margin: 0 0 32px; font-size: 1.7rem; }
+
+/* 제목 뒤에 노란 형광펜을 칠한 듯한 효과 */
+h2 {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--point);
+  border: var(--line);
+}
 
 /* 메뉴를 세로로 쌓기 */
 nav { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
 
-nav a { color: var(--sub); text-decoration: none; }
-nav a::before { content: '> '; } /* ::before = 글자 앞에 장식 끼워넣기 */
+nav a { color: var(--ink); font-weight: 700; text-decoration: none; }
+nav a::before { content: '→ '; } /* ::before = 글자 앞에 장식 끼워넣기 */
 
 /* :hover = 마우스를 올렸을 때 */
-nav a:hover { text-shadow: 0 0 8px var(--sub); }
+nav a:hover { text-decoration: underline; text-decoration-thickness: 3px; }
 
 main { padding: 32px; }
 
@@ -70,44 +79,48 @@ main { padding: 32px; }
 
 .post {
   padding: 16px 20px;
-  border: 1px solid var(--main);
-  box-shadow: 0 0 10px var(--main); /* 테두리 네온 불빛 */
-  transition: transform 0.2s;       /* 변화를 0.2초에 걸쳐 부드럽게 */
+  background: var(--card);
+  border: var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s, box-shadow 0.15s; /* 변화를 0.15초에 걸쳐 부드럽게 */
 }
 
-.post:hover { transform: translateY(-4px); } /* 마우스를 올리면 살짝 떠오른다 */
+/* 마우스를 올리면 카드가 왼쪽 위로 움직이고 그림자가 길어져 "떠오른" 것처럼 보인다 */
+.post:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
 
 .post h3 { margin: 0 0 4px; }
-.post .date { color: var(--sub); font-size: 0.85rem; }
+.post .date { font-size: 0.85rem; font-weight: 700; }
 .post p { white-space: pre-wrap; overflow-wrap: anywhere; } /* 줄바꿈 유지 + 긴 글자는 꺾기 */
-
-/* 웹앱 카드: 제목 링크와 미리보기 창 */
-.app-card a { color: inherit; }
-.app-card iframe {
-  width: 100%;
-  height: 420px;
-  border: 1px solid var(--sub);
-  background: var(--bg);
-}
 
 form { display: flex; flex-direction: column; gap: 8px; max-width: 480px; }
 
+label { font-weight: 700; }
+
 input, textarea, button {
   font: inherit; /* 글꼴을 body 와 동일하게 */
-  padding: 8px 12px;
-  border: 1px solid var(--main);
-  background: var(--bg);
-  color: var(--main);
+  padding: 10px 12px;
+  border: var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
 }
 
-button { cursor: pointer; color: var(--point); border-color: var(--point); }
-button:hover { box-shadow: 0 0 10px var(--point); }
+button {
+  cursor: pointer;
+  font-weight: 700;
+  background: var(--point);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* :active = 누르고 있는 동안. 그림자 자리로 버튼이 이동해 "눌린" 것처럼 보인다 */
+button:active { transform: translate(3px, 3px); box-shadow: none; }
 button[type="submit"] { align-self: flex-start; }
 
 /* :focus-visible = 키보드로 선택했을 때. 어디에 있는지 보이게 한다 */
-:focus-visible { outline: 2px solid var(--sub); outline-offset: 2px; }
+:focus-visible { outline: 3px solid #1a4fff; outline-offset: 2px; }
 
-footer { padding: 16px 32px; color: var(--sub); font-size: 0.85rem; }
+footer { padding: 16px 32px; font-size: 0.85rem; }
 
 /* 미디어 쿼리: 화면 폭이 700px 이하(휴대폰)면 사이드바를 위로 올려 한 열로 */
 @media (max-width: 700px) {
@@ -116,7 +129,7 @@ footer { padding: 16px 32px; color: var(--sub); font-size: 0.85rem; }
     position: static;
     height: auto;
     border-right: none;
-    border-bottom: 1px solid var(--main);
+    border-bottom: var(--line);
   }
   main { padding: 20px 16px; }
 }

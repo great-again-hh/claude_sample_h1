@@ -1,74 +1,173 @@
-/* 블로그와 같은 색을 쓰려고 색 변수 값을 그대로 복사했다 (블로그 파일을 불러오지는 않는다) */
+/* 디자인: 네오 브루탈리즘 = 밝은 원색 + 굵은 검정 테두리 + 번지지 않는 딱딱한 그림자.
+   배치: PC 에서는 왼쪽 사이드바 + 오른쪽 본문(블로그와 같은 구조), 휴대폰에서는 한 열. */
 :root {
-  --bg: #000000;
-  --main: #39ff14;  /* 네온 초록: 본문, 테두리 */
-  --point: #ff2bd6; /* 네온 핑크: 제목, 강조 */
-  --sub: #00f0ff;   /* 네온 하늘: 날짜, 링크 */
-  --dim: #9a9a9a;   /* 회색: 품절, 확인불가 */
+  --bg: #fff4d6;     /* 크림색 바탕 */
+  --ink: #111111;    /* 글자와 테두리의 검정 */
+  --card: #ffffff;
+  --point: #ffd23f;  /* 노랑: 조회 버튼, 선택된 것 */
+  --sub: #b8e0ff;    /* 하늘: 사이드바 */
+  --ok: #9be8a8;     /* 초록: 재고 있음 */
+  --dim: #555555;    /* 회색 글자: 품절, 확인불가 */
+  --line: 2px solid var(--ink);
+  --shadow: 3px 3px 0 var(--ink); /* 가로 3px, 세로 3px, 번짐 0 = 딱딱한 그림자 */
 }
 
-/* 모바일 우선: 기본은 한 열. 넓은 화면에서는 가운데 700px 폭으로만 보인다 */
+/* grid: 왼쪽 280px 사이드바 + 나머지(1fr) 본문. 본문 아래 줄에 footer */
 body {
-  margin: 0 auto;
-  max-width: 700px;
-  padding: 16px;
-  font-family: ui-monospace, Menlo, monospace;
-  line-height: 1.6;
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr); /* minmax(0, …) = 내용이 길어도 칸이 화면 밖으로 늘어나지 않게 */
+  grid-template-rows: 1fr auto;
+  font: 14px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; /* 글자크기/줄간격 글꼴 */
   background: var(--bg);
-  color: var(--main);
-  overflow-wrap: anywhere; /* 긴 주소가 화면 밖으로 나가지 않게 꺾는다 */
+  color: var(--ink);
+  word-break: keep-all;    /* 한글을 단어 중간에서 끊지 않는다 */
+  overflow-wrap: anywhere; /* 그래도 넘치는 긴 주소는 꺾는다 */
 }
 
-h1, h2 { color: var(--point); text-shadow: 0 0 8px var(--point); }
-h1 { font-size: 1.5rem; margin: 8px 0 16px; }
-h2 { font-size: 1.1rem; margin: 24px 0 8px; }
+/* 사이드바: 스크롤해도 화면에 붙어 있다 */
+header {
+  grid-row: 1 / 3;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  box-sizing: border-box;
+  padding: 28px 22px;
+  background: var(--sub);
+  border-right: var(--line);
+  overflow-y: auto; /* 권역이 많아 화면보다 길어지면 사이드바 안에서 스크롤 */
+}
 
-a { color: var(--sub); }
+h1, h2 { font-weight: 800; line-height: 1.2; }
+h1 { font-size: 1.7rem; margin: 0 0 4px; }
+.tagline { margin: 0 0 20px; font-weight: 700; }
 
-/* 누르는 것은 모두 button. 손가락으로 누르기 쉽게 높이 44px 이상 */
+/* 소제목 뒤에 노란 형광펜을 칠한 듯한 효과 */
+h2 {
+  display: inline-block;
+  font-size: 0.95rem;
+  margin: 0 0 10px;
+  padding: 1px 8px;
+  background: var(--point);
+  border: var(--line);
+}
+
+main { padding: 28px 32px 8px; max-width: 1100px; }
+footer { padding: 8px 32px 20px; color: var(--dim); font-size: 12px; max-width: 1100px; }
+footer p { margin: 4px 0; }
+
+a { color: var(--ink); font-weight: 700; }
+
+/* 누르는 것은 모두 button */
 button {
   font: inherit;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--main);
-  background: var(--bg);
-  color: var(--main);
+  min-height: 36px;
+  padding: 6px 12px;
+  border: var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
   cursor: pointer;
   text-align: left;
+  transition: transform 0.1s, box-shadow 0.1s;
 }
-button:hover { box-shadow: 0 0 10px var(--main); }
+
+/* 마우스를 올리면 살짝 떠오르고, 누르는 동안에는 그림자 자리로 내려가 "눌린" 것처럼 보인다 */
+button:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+button:active { transform: translate(3px, 3px); box-shadow: none; }
 
 /* 키보드로 선택했을 때 어디에 있는지 보이게 한다 */
-:focus-visible { outline: 2px solid var(--sub); outline-offset: 2px; }
+:focus-visible { outline: 3px solid #1a4fff; outline-offset: 2px; }
 
-#load-btn { color: var(--point); border-color: var(--point); font-size: 1.1rem; }
+/* 상품 입력칸 */
+header label.field { display: block; padding: 0; margin-bottom: 4px; font-weight: 800; cursor: default; }
+#keyword { width: 100%; height: 40px; margin: 0 0 10px; padding: 0 10px; box-sizing: border-box; font: inherit; border: var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.card .product { color: var(--ink); font-weight: 700; }
 
-.notice, footer, #panel-note { color: var(--sub); font-size: 0.85rem; }
-#fetched-at { color: var(--sub); }
+#load-btn { width: 100%; text-align: center; background: var(--point); font-size: 1.1rem; font-weight: 800; padding: 10px; }
 
-/* 요약 카드 4개: 한 줄에 2개씩 */
-#summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.card { display: block; width: 100%; }
-.card strong { display: block; color: var(--point); font-size: 1.1rem; }
-.card small { display: block; color: var(--sub); }
+button:disabled { cursor: wait; background: var(--card); color: var(--dim); transform: none; box-shadow: none; }
 
-/* aria-expanded / aria-pressed 가 true 인 버튼 = 지금 펼쳐졌거나 선택된 것 */
-button[aria-expanded="true"], button[aria-pressed="true"] { box-shadow: 0 0 10px var(--main); border-width: 2px; }
+/* 진행 막대: 브라우저 기본 모양을 지우고(appearance: none) 테두리와 노란 채움으로 다시 그린다 */
+#bar { appearance: none; display: block; width: 100%; height: 18px; margin-top: 14px; border: var(--line); border-radius: 6px; background: var(--card); overflow: hidden; box-sizing: border-box; }
+#bar[hidden] { display: none; }
+#bar::-webkit-progress-bar { background: var(--card); }
+#bar::-webkit-progress-value { background: var(--point); border-right: var(--line); transition: width 0.3s; } /* 크롬·사파리 */
+#bar::-moz-progress-bar { background: var(--point); }                                                         /* 파이어폭스 */
 
-#region-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+#status { margin: 8px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; } /* tabular-nums = 숫자 폭을 같게 해 글자가 흔들리지 않게 */
+#status:empty, #fetched-at:empty { display: none; } /* :empty = 내용이 없을 때는 자리도 차지하지 않게 */
+#fetched-at { display: inline-block; margin: 12px 0 0; padding: 2px 8px; background: var(--ink); color: var(--card); font-weight: 700; font-size: 12px; }
+.notice { margin: 16px 0 0; font-size: 12px; }
 
-#store-list { list-style: none; padding: 0; margin: 12px 0 0; }
+#empty { margin: 0; padding: 40px 16px; border: 2px dashed var(--ink); border-radius: 8px; text-align: center; color: var(--dim); }
+
+/* 요약 카드: 자리가 되면 4개를 한 줄에, 좁으면 자동으로 줄바꿈 */
+#summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: start; }
+.card { display: block; width: 100%; padding: 10px 12px; }
+.card strong { display: block; font-size: 1.05rem; font-weight: 800; }
+.card small { display: block; color: var(--dim); font-size: 12px; }
+
+/* aria-expanded / aria-pressed 가 true 인 버튼 = 지금 펼쳐졌거나 선택된 것 → 노랗게 */
+button[aria-expanded="true"], button[aria-pressed="true"] { background: var(--point); }
+
+.card .count { display: block; }
+.card .count.in { display: inline-block; padding: 0 6px; background: var(--ok); border: 1px solid var(--ink); font-weight: 800; }
+
+#panel { margin-top: 28px; }
+#panel-note, #scope { margin: 0 0 10px; color: var(--dim); font-size: 12px; }
+
+/* 권역 체크박스 (사이드바) */
+header h2 { display: block; width: fit-content; margin: 20px 0 8px; background: var(--card); } /* block = 앞의 조회 시각과 같은 줄에 붙지 않게 */
+fieldset { margin: 0 0 8px; padding: 6px 10px 8px; border: var(--line); border-radius: 6px; background: var(--card); }
+legend { padding: 0 4px; font-weight: 800; }
+legend .all { min-height: 22px; margin-left: 6px; padding: 0 8px; font-size: 12px; font-weight: 700; box-shadow: none; }
+.checks { padding: 6px 10px; border: var(--line); border-radius: 6px; background: var(--card); } /* 편의점 체크박스 상자 */
+/* 체크박스 | 이름 | 점포 수(오른쪽 끝) 를 한 줄에 */
+header label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+header label small { margin-left: auto; color: var(--dim); font-size: 11px; }
+header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); } /* accent-color = 체크 표시의 색 */
+#estimate { margin: 8px 0 0; font-weight: 700; font-size: 12px; }
+
+#store-list { list-style: none; padding: 0; margin: 0; }
 #store-list li { margin-bottom: 8px; }
-.store { display: block; width: 100%; }
-.store strong, .store span { display: block; }
-.store .where { color: var(--sub); font-size: 0.85rem; }
 
-/* 재고 상태: 색만으로 구분하지 않고 "재고 N / 품절 / 확인불가" 글자를 함께 적는다 */
-.stock { font-size: 0.9rem; }
-.stock.in { color: var(--main); font-weight: bold; }
-.stock.out { color: var(--dim); }
-.stock.unknown { color: var(--dim); font-style: italic; }
+/* 점포 한 줄을 3칸으로: 점포명 | 주소 | 거리. 그 아래 줄 전체에 상품별 재고 */
+.store {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 2.2fr) auto;
+  gap: 2px 16px;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 12px;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.store strong { font-weight: 800; }
+.store .where { color: var(--dim); font-size: 12px; }
+.store .stocks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
 
-.map { padding: 8px 0; }
-.map iframe { display: block; width: 100%; height: 260px; border: 1px solid var(--sub); }
-.map a, header a { display: inline-block; padding: 12px 0; } /* 누르는 높이 44px 이상 확보 */
+/* 재고 상태 칩: 색만으로 구분하지 않고 "재고 N / 품절 / 확인불가" 글자를 함께 적는다 */
+.stock { padding: 0 8px; border: 1px solid var(--ink); border-radius: 999px; font-size: 12px; background: var(--card); }
+.stock.in { background: var(--ok); font-weight: 800; }
+.stock.out { color: var(--dim); border-color: var(--dim); }
+.stock.unknown { color: var(--dim); border: 1px dashed var(--dim); }
+
+.map { padding: 8px 0 4px; }
+.map iframe { display: block; width: 100%; height: 240px; border: var(--line); border-radius: 6px; box-sizing: border-box; }
+.map a { display: inline-block; padding: 8px 0; }
+
+/* 화면 폭 700px 이하(휴대폰): 사이드바를 위로 올려 한 열로, 누르는 요소는 손가락에 맞게 44px 이상 */
+@media (max-width: 700px) {
+  body { display: block; }
+  header { position: static; height: auto; border-right: none; border-bottom: var(--line); padding: 20px 16px; overflow-y: visible; }
+  h1 br { display: none; }
+  main { padding: 20px 16px 8px; }
+  footer { padding: 8px 16px 20px; }
+  button, legend .all { min-height: 44px; }
+  header label { padding: 10px 0; }
+  .map a { padding: 12px 0; }
+  #summary { grid-template-columns: 1fr 1fr; }
+  .store { grid-template-columns: 1fr; }
+}

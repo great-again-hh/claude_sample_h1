@@ -8,41 +8,61 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- 왼쪽 사이드바: 제목, 조회 버튼, 조회 상태, 권역 체크박스 -->
   <header>
-    <a href="../../index.html" target="_top">&lt; 블로그로 돌아가기</a>
-    <h1>포켓몬 카드 재고조회</h1>
-    <!-- 이 버튼을 누르면 script.js 가 data.json 을 읽어 온다 -->
+    <h1>포켓몬 카드 <br>재고조회</h1>
+    <p class="tagline">서울·수원·판교 편의점</p>
+
+    <!-- 조회할 상품을 직접 적는 입력칸. label 의 for 와 input 의 id 를 맞추면 글자를 눌러도 입력칸이 선택된다 -->
+    <label for="keyword" class="field">조회할 상품</label>
+    <input id="keyword" type="text" value="포켓몬 카드" maxlength="40" placeholder="포켓몬 닌자스피너카드" autocomplete="off">
+
+    <!-- 이 버튼을 누르면 script.js 가 체크한 권역의 점포를 공개 재고조회 서버에 실시간으로 물어본다 -->
     <button id="load-btn" type="button">재고 조회</button>
+
+    <!-- progress = 진행 막대. value 를 0~100 으로 바꾸면 막대가 찬다 -->
+    <progress id="bar" max="100" value="0" aria-label="조회 진행률" hidden></progress>
+    <!-- aria-live: 내용이 바뀌면 화면 읽기 프로그램이 읽어 준다 -->
+    <p id="status" aria-live="polite"></p>
+    <p id="fetched-at"></p>
+
+    <!-- 편의점 체크박스: 여러 개를 고를 수 있다. script.js 가 채운다 -->
+    <h2>조회할 편의점</h2>
+    <form id="chains" class="checks"></form>
+
+    <!-- 권역 체크박스: script.js 가 stores.json 을 읽어 여기에 채운다 -->
+    <h2>조회할 권역</h2>
+    <form id="regions"></form>
+    <p id="estimate" aria-live="polite">점포 목록을 불러오는 중...</p>
+
     <p class="notice">
-      이 버튼은 미리 저장해 둔 조회 결과를 불러옵니다. 실시간이 아닙니다. 방문 전 점포에 확인하세요.
+      체크한 편의점과 권역의 점포만 조회합니다. 조회한 순간의 값이니 방문 전 점포에 확인하세요.
     </p>
   </header>
 
   <main>
-    <!-- aria-live: 내용이 바뀌면 화면 읽기 프로그램이 읽어 준다 -->
-    <p id="status" aria-live="polite"></p>
+    <!-- 버튼을 누르기 전에 보이는 안내 -->
+    <p id="empty">왼쪽에서 편의점과 권역을 체크하고 [재고 조회] 버튼을 누르면 결과가 여기에 나옵니다.</p>
 
-    <!-- hidden: 처음에는 숨겨 두고, 데이터를 읽은 뒤 JS 가 보이게 한다 -->
+    <!-- hidden: 처음에는 숨겨 두고, 조회가 끝난 뒤 JS 가 보이게 한다 -->
     <section id="result" hidden>
-      <p id="fetched-at"></p>
-
       <h2>편의점별 요약</h2>
+      <p id="scope"></p>
       <div id="summary"></div>
 
-      <!-- 요약 카드를 누르면 여기에 점포 목록이 나온다 -->
-      <section id="panel" hidden>
+      <!-- 재고가 있는 점포만 여기에 나온다 -->
+      <section id="panel">
         <h2 id="panel-title"></h2>
         <p id="panel-note"></p>
-        <div id="region-filter" role="group" aria-label="지역으로 좁히기"></div>
         <ul id="store-list"></ul>
       </section>
     </section>
   </main>
 
   <footer>
-    <p>조회 범위: 기준 지점 5곳(강남역, 홍대입구역, 서울역, 수원역, 판교역) 주변만 조회했습니다.
-       CU는 반경 약 1km, 이마트24는 같은 구 안에서 가까운 20곳입니다. 서울·수원·판교 전체가 아닙니다.</p>
-    <p id="source">출처: 재고조회 MCP (각 편의점 앱 데이터 기반, 비공식 조회 결과)</p>
+    <p>편의점마다 입력한 검색어로 찾은 첫 번째 상품의 재고를 조회합니다. 어떤 상품이 골라졌는지는 요약 카드에 나옵니다.
+       이마트24는 재고 기록이 없는 점포가 "확인불가"로 집계됩니다. 세븐일레븐은 재고를 조회하지 않습니다.</p>
+    <p>출처: 공개 재고조회 서버 mcp.aka.page (각 편의점 앱 데이터 기반, 비공식 조회 결과). <span id="built-at"></span></p>
   </footer>
 
   <script src="script.js"></script>

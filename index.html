@@ -16,10 +16,9 @@
     <nav>
       <!-- a = 링크. href="#id" 는 같은 페이지 안의 해당 id 위치로 이동 -->
       <a href="#posts">글 목록</a>
-      <a href="#apps">웹앱</a>
       <a href="#write">글쓰기</a>
       <!-- id 는 JS가 이 버튼을 찾을 때 쓰는 이름표 -->
-      <button id="theme-btn" type="button">네온 색 바꾸기</button>
+      <button id="theme-btn" type="button">색 바꾸기</button>
     </nav>
   </header>
 
@@ -28,17 +27,6 @@
       <h2>글 목록</h2>
       <!-- 비어 있음! script.js 가 여기에 글을 채워 넣는다 -->
       <div id="post-list"></div>
-    </section>
-
-    <section id="apps">
-      <h2>웹앱</h2>
-      <!-- 웹앱 카드: 제목, 설명, 미리보기. 웹앱마다 article 하나씩 추가한다 -->
-      <article class="post app-card">
-        <h3><a href="apps/pokemon-stock/">포켓몬 카드 재고조회</a></h3>
-        <p>서울·수원·판교 편의점의 포켓몬 카드 재고를 편의점별 요약, 점포 목록, 지도로 보여 준다. 미리 조회해 둔 결과이며 실시간이 아니다.</p>
-        <!-- iframe = 다른 페이지를 이 페이지 안에 끼워 넣는 창. loading="lazy" 는 화면에 보일 때쯤 불러오기 -->
-        <iframe src="apps/pokemon-stock/" title="포켓몬 카드 재고조회 미리보기" loading="lazy"></iframe>
-      </article>
     </section>
 
     <section id="write">
