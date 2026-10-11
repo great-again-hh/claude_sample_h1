@@ -1,0 +1,122 @@
+/* CSS = 페이지의 "꾸밈(색, 크기, 배치)".
+   문법:  선택자 { 속성: 값; }
+   선택자 종류:  태그이름(header) / .클래스(.post) / #아이디(#post-list)
+   HTML 은 거의 그대로인데 이 파일만 바꿔서 디자인과 레이아웃이 완전히 달라졌다. */
+
+/* 변수: 네온 색을 한 곳에 모아둔다 */
+:root {
+  --bg: #000000;
+  --main: #39ff14;  /* 네온 초록: 본문, 테두리 */
+  --point: #ff2bd6; /* 네온 핑크: 제목, 강조 */
+  --sub: #00f0ff;   /* 네온 하늘: 날짜, 링크 */
+}
+
+/* body 에 alt 클래스가 붙으면(JS가 붙임) 네온 색 조합이 바뀐다 */
+body.alt {
+  --main: #00f0ff;
+  --point: #fff01f;
+  --sub: #ff2bd6;
+}
+
+/* grid: 화면을 "칸"으로 나누는 배치 방법. 왼쪽 260px 사이드바 + 나머지(1fr) 본문 */
+body {
+  margin: 0;
+  min-height: 100vh; /* vh = 화면 높이의 % */
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 1fr auto;
+  font-family: ui-monospace, Menlo, monospace;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--main);
+}
+
+/* 왼쪽 사이드바: 스크롤해도 화면에 붙어 있다 */
+header {
+  grid-row: 1 / 3;  /* 1번 줄부터 3번 줄 앞까지 = 세로로 2칸 차지 */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  box-sizing: border-box; /* padding 을 height 안에 포함 */
+  padding: 32px 24px;
+  border-right: 1px solid var(--main);
+}
+
+/* text-shadow 를 글자와 같은 색으로 번지게 하면 네온 불빛처럼 보인다 */
+h1, h2, h3 {
+  color: var(--point);
+  text-shadow: 0 0 8px var(--point);
+}
+
+header h1 { margin: 0 0 32px; font-size: 1.6rem; }
+
+/* 메뉴를 세로로 쌓기 */
+nav { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+
+nav a { color: var(--sub); text-decoration: none; }
+nav a::before { content: '> '; } /* ::before = 글자 앞에 장식 끼워넣기 */
+
+/* :hover = 마우스를 올렸을 때 */
+nav a:hover { text-shadow: 0 0 8px var(--sub); }
+
+main { padding: 32px; }
+
+/* 글 카드를 격자로: 한 칸이 최소 240px, 자리가 남으면 자동으로 여러 열 */
+#post-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.post {
+  padding: 16px 20px;
+  border: 1px solid var(--main);
+  box-shadow: 0 0 10px var(--main); /* 테두리 네온 불빛 */
+  transition: transform 0.2s;       /* 변화를 0.2초에 걸쳐 부드럽게 */
+}
+
+.post:hover { transform: translateY(-4px); } /* 마우스를 올리면 살짝 떠오른다 */
+
+.post h3 { margin: 0 0 4px; }
+.post .date { color: var(--sub); font-size: 0.85rem; }
+.post p { white-space: pre-wrap; overflow-wrap: anywhere; } /* 줄바꿈 유지 + 긴 글자는 꺾기 */
+
+/* 웹앱 카드: 제목 링크와 미리보기 창 */
+.app-card a { color: inherit; }
+.app-card iframe {
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--sub);
+  background: var(--bg);
+}
+
+form { display: flex; flex-direction: column; gap: 8px; max-width: 480px; }
+
+input, textarea, button {
+  font: inherit; /* 글꼴을 body 와 동일하게 */
+  padding: 8px 12px;
+  border: 1px solid var(--main);
+  background: var(--bg);
+  color: var(--main);
+}
+
+button { cursor: pointer; color: var(--point); border-color: var(--point); }
+button:hover { box-shadow: 0 0 10px var(--point); }
+button[type="submit"] { align-self: flex-start; }
+
+/* :focus-visible = 키보드로 선택했을 때. 어디에 있는지 보이게 한다 */
+:focus-visible { outline: 2px solid var(--sub); outline-offset: 2px; }
+
+footer { padding: 16px 32px; color: var(--sub); font-size: 0.85rem; }
+
+/* 미디어 쿼리: 화면 폭이 700px 이하(휴대폰)면 사이드바를 위로 올려 한 열로 */
+@media (max-width: 700px) {
+  body { display: block; }
+  header {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--main);
+  }
+  main { padding: 20px 16px; }
+}

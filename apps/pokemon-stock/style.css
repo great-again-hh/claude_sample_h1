@@ -1,0 +1,74 @@
+/* 블로그와 같은 색을 쓰려고 색 변수 값을 그대로 복사했다 (블로그 파일을 불러오지는 않는다) */
+:root {
+  --bg: #000000;
+  --main: #39ff14;  /* 네온 초록: 본문, 테두리 */
+  --point: #ff2bd6; /* 네온 핑크: 제목, 강조 */
+  --sub: #00f0ff;   /* 네온 하늘: 날짜, 링크 */
+  --dim: #9a9a9a;   /* 회색: 품절, 확인불가 */
+}
+
+/* 모바일 우선: 기본은 한 열. 넓은 화면에서는 가운데 700px 폭으로만 보인다 */
+body {
+  margin: 0 auto;
+  max-width: 700px;
+  padding: 16px;
+  font-family: ui-monospace, Menlo, monospace;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--main);
+  overflow-wrap: anywhere; /* 긴 주소가 화면 밖으로 나가지 않게 꺾는다 */
+}
+
+h1, h2 { color: var(--point); text-shadow: 0 0 8px var(--point); }
+h1 { font-size: 1.5rem; margin: 8px 0 16px; }
+h2 { font-size: 1.1rem; margin: 24px 0 8px; }
+
+a { color: var(--sub); }
+
+/* 누르는 것은 모두 button. 손가락으로 누르기 쉽게 높이 44px 이상 */
+button {
+  font: inherit;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--main);
+  background: var(--bg);
+  color: var(--main);
+  cursor: pointer;
+  text-align: left;
+}
+button:hover { box-shadow: 0 0 10px var(--main); }
+
+/* 키보드로 선택했을 때 어디에 있는지 보이게 한다 */
+:focus-visible { outline: 2px solid var(--sub); outline-offset: 2px; }
+
+#load-btn { color: var(--point); border-color: var(--point); font-size: 1.1rem; }
+
+.notice, footer, #panel-note { color: var(--sub); font-size: 0.85rem; }
+#fetched-at { color: var(--sub); }
+
+/* 요약 카드 4개: 한 줄에 2개씩 */
+#summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.card { display: block; width: 100%; }
+.card strong { display: block; color: var(--point); font-size: 1.1rem; }
+.card small { display: block; color: var(--sub); }
+
+/* aria-expanded / aria-pressed 가 true 인 버튼 = 지금 펼쳐졌거나 선택된 것 */
+button[aria-expanded="true"], button[aria-pressed="true"] { box-shadow: 0 0 10px var(--main); border-width: 2px; }
+
+#region-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+
+#store-list { list-style: none; padding: 0; margin: 12px 0 0; }
+#store-list li { margin-bottom: 8px; }
+.store { display: block; width: 100%; }
+.store strong, .store span { display: block; }
+.store .where { color: var(--sub); font-size: 0.85rem; }
+
+/* 재고 상태: 색만으로 구분하지 않고 "재고 N / 품절 / 확인불가" 글자를 함께 적는다 */
+.stock { font-size: 0.9rem; }
+.stock.in { color: var(--main); font-weight: bold; }
+.stock.out { color: var(--dim); }
+.stock.unknown { color: var(--dim); font-style: italic; }
+
+.map { padding: 8px 0; }
+.map iframe { display: block; width: 100%; height: 260px; border: 1px solid var(--sub); }
+.map a, header a { display: inline-block; padding: 12px 0; } /* 누르는 높이 44px 이상 확보 */

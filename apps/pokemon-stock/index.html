@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>포켓몬 카드 재고조회</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <a href="../../index.html" target="_top">&lt; 블로그로 돌아가기</a>
+    <h1>포켓몬 카드 재고조회</h1>
+    <!-- 이 버튼을 누르면 script.js 가 data.json 을 읽어 온다 -->
+    <button id="load-btn" type="button">재고 조회</button>
+    <p class="notice">
+      이 버튼은 미리 저장해 둔 조회 결과를 불러옵니다. 실시간이 아닙니다. 방문 전 점포에 확인하세요.
+    </p>
+  </header>
+
+  <main>
+    <!-- aria-live: 내용이 바뀌면 화면 읽기 프로그램이 읽어 준다 -->
+    <p id="status" aria-live="polite"></p>
+
+    <!-- hidden: 처음에는 숨겨 두고, 데이터를 읽은 뒤 JS 가 보이게 한다 -->
+    <section id="result" hidden>
+      <p id="fetched-at"></p>
+
+      <h2>편의점별 요약</h2>
+      <div id="summary"></div>
+
+      <!-- 요약 카드를 누르면 여기에 점포 목록이 나온다 -->
+      <section id="panel" hidden>
+        <h2 id="panel-title"></h2>
+        <p id="panel-note"></p>
+        <div id="region-filter" role="group" aria-label="지역으로 좁히기"></div>
+        <ul id="store-list"></ul>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <p>조회 범위: 기준 지점 5곳(강남역, 홍대입구역, 서울역, 수원역, 판교역) 주변만 조회했습니다.
+       CU는 반경 약 1km, 이마트24는 같은 구 안에서 가까운 20곳입니다. 서울·수원·판교 전체가 아닙니다.</p>
+    <p id="source">출처: 재고조회 MCP (각 편의점 앱 데이터 기반, 비공식 조회 결과)</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

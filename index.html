@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<!-- HTML = 페이지의 "뼈대(구조와 내용)". 태그 <이름>...</이름> 로 감싼다. -->
+<html lang="ko">
+<head>
+  <!-- head: 화면에 안 보이는 설정 정보 -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1"> <!-- 모바일에서 화면 폭 맞춤 -->
+  <title>나의 첫 블로그</title>
+  <link rel="stylesheet" href="style.css"> <!-- CSS 파일 연결 -->
+</head>
+<body>
+  <!-- body: 화면에 실제로 보이는 부분 -->
+
+  <header>
+    <h1>나의 첫 블로그</h1>
+    <nav>
+      <!-- a = 링크. href="#id" 는 같은 페이지 안의 해당 id 위치로 이동 -->
+      <a href="#posts">글 목록</a>
+      <a href="#apps">웹앱</a>
+      <a href="#write">글쓰기</a>
+      <!-- id 는 JS가 이 버튼을 찾을 때 쓰는 이름표 -->
+      <button id="theme-btn" type="button">네온 색 바꾸기</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="posts">
+      <h2>글 목록</h2>
+      <!-- 비어 있음! script.js 가 여기에 글을 채워 넣는다 -->
+      <div id="post-list"></div>
+    </section>
+
+    <section id="apps">
+      <h2>웹앱</h2>
+      <!-- 웹앱 카드: 제목, 설명, 미리보기. 웹앱마다 article 하나씩 추가한다 -->
+      <article class="post app-card">
+        <h3><a href="apps/pokemon-stock/">포켓몬 카드 재고조회</a></h3>
+        <p>서울·수원·판교 편의점의 포켓몬 카드 재고를 편의점별 요약, 점포 목록, 지도로 보여 준다. 미리 조회해 둔 결과이며 실시간이 아니다.</p>
+        <!-- iframe = 다른 페이지를 이 페이지 안에 끼워 넣는 창. loading="lazy" 는 화면에 보일 때쯤 불러오기 -->
+        <iframe src="apps/pokemon-stock/" title="포켓몬 카드 재고조회 미리보기" loading="lazy"></iframe>
+      </article>
+    </section>
+
+    <section id="write">
+      <h2>글쓰기</h2>
+      <form id="post-form">
+        <!-- label 의 for 와 input 의 id 를 맞추면, 글자를 눌러도 입력칸이 선택된다 -->
+        <label for="title">제목</label>
+        <input id="title" type="text" required> <!-- required: 비우면 브라우저가 막아줌 -->
+
+        <label for="body">내용</label>
+        <textarea id="body" rows="4" required></textarea>
+
+        <button type="submit">등록</button>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2026 나의 첫 블로그</p>
+  </footer>
+
+  <!-- JS 는 body 맨 끝에: 위의 태그들이 다 만들어진 뒤에 실행되어야 찾을 수 있다 -->
+  <script src="script.js"></script>
+</body>
+</html>
