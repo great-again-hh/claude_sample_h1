@@ -357,17 +357,26 @@ function renderSummary() {
 
 // 요약 아래의 목록: 재고가 있는 점포만 보여 준다
 function renderList() {
+  // 검색창에 글자가 있으면: 조회된 점포 전체(재고 없는 점포 포함)에서 이름·주소로 찾는다.
+  // 비어 있으면: 재고가 있는 점포만 보여 준다.
+  const word = norm($('store-search').value);
   const shown = result.stores
-    .filter(hasStock)
+    .filter(s => word ? norm(s.name + s.address).includes(word) : hasStock(s))
     .filter(s => !chainFilter || s.chain === chainFilter)
     // 내 위치를 알면 가까운 점포부터, 모르면 수량이 많은 점포부터
     .sort((a, b) => me ? distanceM(me, [a.lat, a.lng]) - distanceM(me, [b.lat, b.lng]) : totalQty(b) - totalQty(a));
   const who = chainFilter ? chainName(chainFilter) + ' ' : '';
-  $('panel-title').textContent = `재고 있는 ${who}점포 ${shown.length}곳`;
+  $('panel-title').textContent = word ? `검색된 ${who}점포 ${shown.length}곳` : `재고 있는 ${who}점포 ${shown.length}곳`;
   const order = me ? '내 위치에서 가까운 순입니다.' : '재고가 많은 순입니다. 브라우저에서 위치 사용을 허용하면 가까운 순으로 바뀝니다.';
-  $('panel-note').textContent = shown.length ? order + ' 점포를 누르면 아래에 지도가 펼쳐집니다.' : '선택한 권역에 재고가 있는 점포가 없습니다.';
-  $('store-list').replaceChildren(...shown.map(storeItem));
+  const none = word ? '조회한 편의점·권역의 점포 중에 검색어와 맞는 점포가 없습니다.' : '선택한 권역에 재고가 있는 점포가 없습니다. 검색창에서 점포를 찾아볼 수 있습니다.';
+  $('panel-note').textContent = shown.length ? (word ? '재고가 없는 점포도 함께 보여 줍니다. ' : '') + order + ' 점포를 누르면 아래에 지도가 펼쳐집니다.' : none;
+  // shortcut: 한 번에 300곳까지만 그린다(너무 많으면 화면이 느려진다), 더 필요하면 "더 보기" 버튼 추가
+  $('store-list').replaceChildren(...shown.slice(0, 300).map(storeItem));
 }
+
+// 검색용으로 글자를 다듬는다: 띄어쓰기를 없애고 영문은 소문자로 ("광교 호반" 과 "광교호반" 을 같게 본다)
+const norm = text => text.replace(/\s+/g, '').toLowerCase();
+console.assert(norm(' 광교 호반 GS ') === '광교호반gs', 'norm');
 
 const totalQty = store => Object.values(store.stock).reduce((sum, n) => sum + (n || 0), 0);
 
@@ -391,7 +400,8 @@ function storeItem(store, i) {
   const stocks = el('span', '', 'stocks');
   const n = store.stock.qty;
   const kind = n > 0 ? 'in' : n === 0 ? 'out' : 'unknown';
-  stocks.append(el('span', `${result.matched[store.chain].name}: ${stockLabel(n)}`, 'stock ' + kind));
+  const m = result.matched[store.chain]; // 조회하지 못한 편의점은 골라진 상품이 없다
+  stocks.append(el('span', `${m ? m.name : '재고'}: ${stockLabel(n)}`, 'stock ' + kind));
   btn.append(stocks);
 
   btn.addEventListener('click', () => {
@@ -425,6 +435,9 @@ function mapNodes(store) {
 }
 
 // ---------- 7. 시작 ----------
+// 점포 검색창: 글자를 적을 때마다 목록을 다시 그린다
+$('store-search').addEventListener('input', () => { if (result) renderList(); });
+
 // 입력칸: 지난번 검색어를 되살리고, Enter 를 누르면 [재고 조회] 버튼을 누른 것과 같게 한다
 $('keyword').value = localStorage.getItem('pokemon-stock-keyword') || $('keyword').value;
 $('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') $('load-btn').click(); });

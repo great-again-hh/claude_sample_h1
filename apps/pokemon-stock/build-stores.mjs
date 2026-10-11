@@ -6,9 +6,10 @@
 // 2. 재고를 조회할 때 쓸 "조회 지점"을 계산한다. 서버가 한 번에 주는 점포 수에 한계가 있어서,
 //    권역의 모든 점포가 빠지지 않도록 지점을 여러 개 고른다.
 // 3. 결과를 stores.json 으로 저장한다(점포명, 주소, 좌표만. 전화번호는 저장하지 않는다).
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const API = 'https://mcp.aka.page/';
+const OUT = new URL('./stores.json', import.meta.url); // 결과를 저장할 파일
 const MAX_CALLS = 900; // 서버에 부담을 주지 않도록 정한 호출 상한
 
 // 권역 목록. match = 점포 주소에 모두 들어 있어야 하는 글자, seeds = 점포 찾기를 시작할 역 좌표,
@@ -96,13 +97,41 @@ const regionOf = address => REGIONS.find(r => r.match.every(m => address.include
 const clean = s => s.replace(/\s+/g, ' ').trim();
 const stores = []; // 모든 편의점의 대상 권역 점포가 여기에 모인다
 
+// ---------- 이마트24: 구 이름으로 40곳씩 페이지를 넘기며 모은다 ----------
+for (const r of REGIONS) {
+  let count = 0;
+  for (let page = 1; page <= 15; page++) {
+    let list;
+    try {
+      list = (await callTool('emart24_find_nearby_stores', { area1: r.area1, area2: r.area2, page, limit: 40 })).stores;
+    } catch (e) { log(`이마트24 ${r.name} ${page}쪽 실패 (${e.message})`); break; }
+    for (const s of list) {
+      if (stores.some(x => x.chain === 'emart24' && x.code === s.storeCode)) continue;
+      stores.push({ chain: 'emart24', region: r.id, code: s.storeCode, name: s.storeName, address: clean(s.address), lat: Number(s.latitude), lng: Number(s.longitude) });
+      count++;
+    }
+    if (list.length < 40) break; // 40곳보다 적게 왔으면 마지막 쪽이다
+  }
+  log(`이마트24 ${r.name}: ${count}곳`);
+}
+
 // ---------- CU, GS25: 좌표 주변 점포만 주므로, 찾은 점포를 발판 삼아 옆으로 넓혀 가며 모은다 ----------
+// 이마트24 → CU → GS25 순서로 모으고, 앞에서 모은 점포 위치를 뒤 편의점의 예비 지점으로 쓴다.
 for (const [chain, cfg] of Object.entries(NEARBY)) {
   const found = new Map();  // 점포 코드 → 점포
   const centers = [];       // 이미 조회한 지점
   const queue = REGIONS.flatMap(r => r.seeds);
+  // 예비 지점: 먼저 모은 다른 편의점의 점포 위치. 점포 사이가 멀어 발판이 끊긴 동네를 메우는 데 쓴다
+  // (편의점이 있는 동네에는 다른 편의점도 있기 쉽다).
+  const spare = stores.map(s => [s.lat, s.lng]);
   let failed = 0;
-  while (queue.length) {
+  while (queue.length || spare.length) {
+    if (!queue.length) {
+      // 옆으로 넓혀 갈 곳이 더 없으면, 예비 지점 중 지금까지의 조회 지점에서 먼 곳을 조회한다
+      const p = spare.pop();
+      if (centers.every(q => dist(q, p) > cfg.spacing)) queue.push(p);
+      continue;
+    }
     const c = queue.shift();
     centers.push(c);
     let list;
@@ -126,24 +155,6 @@ for (const [chain, cfg] of Object.entries(NEARBY)) {
   log(`${chain} 완료: 조회 ${centers.length}회(실패 ${failed}), 대상 권역 점포 ${mine.length}곳`);
 }
 
-// ---------- 이마트24: 구 이름으로 40곳씩 페이지를 넘기며 모은다 ----------
-for (const r of REGIONS) {
-  let count = 0;
-  for (let page = 1; page <= 15; page++) {
-    let list;
-    try {
-      list = (await callTool('emart24_find_nearby_stores', { area1: r.area1, area2: r.area2, page, limit: 40 })).stores;
-    } catch (e) { log(`이마트24 ${r.name} ${page}쪽 실패 (${e.message})`); break; }
-    for (const s of list) {
-      if (stores.some(x => x.chain === 'emart24' && x.code === s.storeCode)) continue;
-      stores.push({ chain: 'emart24', region: r.id, code: s.storeCode, name: s.storeName, address: clean(s.address), lat: Number(s.latitude), lng: Number(s.longitude) });
-      count++;
-    }
-    if (list.length < 40) break; // 40곳보다 적게 왔으면 마지막 쪽이다
-  }
-  log(`이마트24 ${r.name}: ${count}곳`);
-}
-
 // ---------- 세븐일레븐: 검색어로 찾은 뒤 주소로 권역을 가린다 (서버의 세븐일레븐 연결이 자주 실패한다) ----------
 for (const r of REGIONS) {
   try {
@@ -156,6 +167,18 @@ for (const r of REGIONS) {
     }
     log(`세븐일레븐 ${r.name}: ${count}곳`);
   } catch (e) { log(`세븐일레븐 ${r.name} 실패 (${e.message})`); }
+}
+
+// ---------- 이번에 조회가 실패한 곳은 지난번에 저장한 목록을 그대로 쓴다 (실패했다고 목록이 비면 안 된다) ----------
+if (existsSync(OUT)) {
+  const prev = JSON.parse(readFileSync(OUT, 'utf8')).stores;
+  for (const r of REGIONS) for (const chain of ['emart24', 'seveneleven']) {
+    const old = prev.filter(s => s.chain === chain && s.region === r.id);
+    if (old.length && !stores.some(s => s.chain === chain && s.region === r.id)) {
+      stores.push(...old);
+      log(`${chain} ${r.name}: 이번 조회 실패 → 지난번 목록 ${old.length}곳을 유지`);
+    }
+  }
 }
 
 // ---------- 권역별 점포 수와 재고 조회 지점 계산 → 저장 ----------
@@ -178,7 +201,7 @@ const regions = REGIONS.map(r => {
   return { id: r.id, group: r.group, name: r.name, area1: r.area1, area2: r.area2, count, points };
 });
 
-writeFileSync(new URL('./stores.json', import.meta.url), JSON.stringify({
+writeFileSync(OUT, JSON.stringify({
   builtAt: new Date().toLocaleString('sv-SE').replace(' ', 'T'),
   source: '공개 재고조회 서버 mcp.aka.page',
   regions,

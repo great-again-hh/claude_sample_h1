@@ -52,7 +52,12 @@
 
       <!-- 재고가 있는 점포만 여기에 나온다 -->
       <section id="panel">
-        <h2 id="panel-title"></h2>
+        <div class="panel-head">
+          <h2 id="panel-title"></h2>
+          <!-- 점포 검색창: 적는 즉시 조회된 점포 전체(재고 없는 점포 포함)에서 이름·주소로 찾는다 -->
+          <label for="store-search" class="sr-only">점포 검색</label>
+          <input id="store-search" type="search" placeholder="점포명·주소 검색 (예: 광교)" maxlength="30" autocomplete="off">
+        </div>
         <p id="panel-note"></p>
         <ul id="store-list"></ul>
       </section>
