@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '14';
+const VERSION = '15';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -574,6 +574,13 @@ $('reset-btn').addEventListener('click', () => {
 // ---------- 5-5. 팩 선택하기와 힛카드 ----------
 let cardData = null; // cards.json 내용: 팩 목록과 팩별 높은 등급 카드
 
+// 팩마다 정한 색. 실제 팩 그림은 공개 자료에 없어서, 이 색으로 직접 그린 팩 모양을 대신 보여 준다
+const PACK_COLOR = {
+  M6: '#8ee0a8', M5: '#9db8ff', M4: '#c9a8ff', M3: '#d7f171', M2a: '#ffd23f', M2: '#ff9d7a', M1L: '#ffb84d', M1S: '#ffb3d1',
+  SV11B: '#bdbdbd', SV11W: '#ffffff', SV10: '#e0a3c8', SV9a: '#ff8f8f', SV9: '#a8dcff', SV8a: '#9be8e0', SV8: '#ffe97a',
+};
+const packColor = id => PACK_COLOR[id] || '#ffd23f';
+
 // "선택하기"에서 체크한 팩들
 const checkedPacks = () => cardData ? cardData.packs.filter(p => $('p-' + p.id).checked) : [];
 
@@ -597,7 +604,10 @@ function renderPacks() {
     input.id = 'p-' + p.id;
     input.checked = saved.includes(p.id);
     const hits = p.cards.filter(c => c.hit).length;
-    label.append(input, el('span', p.name), el('small', hits ? `힛카드 ${hits}장` : '등급 자료 없음'));
+    const icon = el('i', '', 'pack-icon'); // 팩 이름 앞의 작은 팩 모양(이 팩의 색)
+    icon.style.setProperty('--c', packColor(p.id));
+    icon.setAttribute('aria-hidden', 'true'); // 꾸밈이라 화면 읽기 프로그램은 건너뛰게 한다
+    label.append(input, icon, el('span', p.name), el('small', hits ? `힛카드 ${hits}장` : p.cards.every(c => c.image) ? '카드 그림 있음' : '등급 자료 없음'));
     $('packs').append(label);
   }
   $('packs').addEventListener('change', () => {
@@ -617,22 +627,56 @@ function cardChip(c) {
   return li;
 }
 
-// 팩 하나의 화면: 팩 → [팩 열기] → 힛카드가 부채꼴로 펼쳐짐 → [다시 보기], 그 아래에 카드 목록
+// 카드 그림 한 장. 그림은 TCGdex 서버에 있는 일본어판 그림이다(주소 뒤에 /low.webp = 작은 그림)
+function cardImage(c) {
+  const img = el('img');
+  img.src = c.image + '/low.webp';
+  img.alt = `${cardTitle(c)} ${c.no}`; // 그림을 볼 수 없는 사람에게 읽어 주는 설명
+  img.loading = 'lazy';                // 화면에 보일 때쯤 불러온다
+  img.width = 245;
+  img.height = 337;
+  return img;
+}
+
+// 그림이 있는 카드를 목록의 한 칸으로: 그림(누르면 큰 그림이 새 탭에 열림) + 이름·번호
+function cardFigure(c) {
+  const li = el('li');
+  const link = el('a');
+  link.href = c.image + '/high.webp';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.append(cardImage(c));
+  li.append(link, el('strong', cardTitle(c)), el('span', c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`));
+  return li;
+}
+
+// 카드 여러 장을 목록으로: 그림이 있으면 그림 격자, 없으면 글자 칸
+function cardList(cards, wrap) {
+  const pictured = cards.every(c => c.image);
+  const list = el('ul', '', pictured ? 'gallery' : wrap ? 'chips wrap' : 'chips');
+  list.append(...cards.map(pictured ? cardFigure : cardChip));
+  return list;
+}
+
+// 팩 하나의 화면: 팩 → [팩 열기] → 카드가 부채꼴로 펼쳐짐 → [다시 보기], 그 아래에 카드 목록
 function packPanel(pack) {
   const hits = pack.cards.filter(c => c.hit);
-  const others = pack.cards.filter(c => !c.hit);
+  const pictured = pack.cards.length > 0 && pack.cards.every(c => c.image);
+  // 펼쳐 보일 카드: 힛카드. 등급 자료가 없는 팩은, 그림이 있으면 번호가 가장 큰 8장을 대신 보여 준다
+  const featured = hits.length ? hits : pictured ? pack.cards.slice(-8) : [];
+  const others = pack.cards.filter(c => !featured.includes(c));
   const box = el('article', '', 'pack');
+  box.style.setProperty('--c', packColor(pack.id)); // 이 팩의 색. CSS 가 팩 모양과 카드 뒤 배경에 쓴다
   box.append(el('h3', pack.name));
-  box.append(el('p', `일본어판 이름 ${pack.jpName} · ${pack.releaseDate} 발매 · 정규 카드 ${pack.official}장 · 힛카드 ${hits.length}장`, 'pack-meta'));
+  box.append(el('p', `일본어판 이름 ${pack.jpName} · ${pack.releaseDate} 발매 · 정규 카드 ${pack.official}장 · ${hits.length ? `힛카드 ${hits.length}장` : '등급 자료 없음'}`, 'pack-meta'));
 
-  if (hits.length === 0) {
-    // 공개 자료에 등급이 없는 팩: 힛카드를 가려낼 수 없으니 시크릿 카드를 번호순으로 모두 보여 준다
+  if (featured.length === 0) {
+    // 등급 자료도 그림도 없는 팩: 힛카드를 가려낼 수 없으니 시크릿 카드를 번호순으로 모두 보여 준다
     box.append(el('p', `이 팩은 공개 자료에 등급 정보가 없어 힛카드를 가려내지 못했습니다. 시크릿 카드 ${others.length}장을 번호순으로 보여 줍니다(힛카드는 보통 번호가 큰 쪽에 있습니다).`, 'pack-meta'));
-    const list = el('ul', '', 'chips wrap');
-    list.append(...others.map(cardChip));
-    box.append(list);
+    box.append(cardList(others, true));
     return box;
   }
+  if (hits.length === 0) box.append(el('p', '이 팩은 공개 자료에 등급 정보가 없어, 번호가 가장 큰 8장을 펼쳐 보여 줍니다(힛카드는 보통 번호가 큰 쪽에 있지만 단정할 수는 없습니다).', 'pack-meta'));
 
   const stage = el('div', '', 'stage');
   const cover = el('button', '', 'pack-cover'); // 닫혀 있는 팩
@@ -640,11 +684,12 @@ function packPanel(pack) {
   cover.append(el('span', '포켓몬 카드 게임'), el('strong', pack.name), el('span', '팩 열기', 'open'));
   const fan = el('div', '', 'fan');             // 펼쳐진 카드들
   fan.hidden = true;
-  fan.style.setProperty('--n', hits.length);    // CSS 가 카드 수(--n)와 순서(--i)로 기울기를 계산한다
-  hits.forEach((c, i) => {
-    const card = el('div', '', 'tcg r-' + c.rarity.replace(/[^A-Za-z]/g, ''));
+  fan.style.setProperty('--n', featured.length); // CSS 가 카드 수(--n)와 순서(--i)로 기울기를 계산한다
+  featured.forEach((c, i) => {
+    const card = el('div', '', c.image ? 'tcg art' : 'tcg r-' + c.rarity.replace(/[^A-Za-z]/g, ''));
     card.style.setProperty('--i', i);
-    card.append(el('span', c.rarity, 'rarity'), el('strong', cardTitle(c)), el('span', c.no, 'no'));
+    if (c.image) card.append(cardImage(c)); // 그림이 있으면 그림으로
+    else card.append(el('span', c.rarity, 'rarity'), el('strong', cardTitle(c)), el('span', c.no, 'no')); // 없으면 글자 카드로
     fan.append(card);
   });
   const again = el('button', '다시 보기', 'again');
@@ -655,15 +700,11 @@ function packPanel(pack) {
   stage.append(cover, fan);
   box.append(stage, again);
 
-  const chips = el('ul', '', 'chips');
-  chips.append(...hits.map(cardChip));
-  box.append(chips);
+  box.append(cardList(featured, false));
   if (others.length) {
     // details/summary = 누르면 펼쳐지는 접이식 영역(HTML 기본 기능)
     const more = el('details');
-    const list = el('ul', '', 'chips wrap');
-    list.append(...others.map(cardChip));
-    more.append(el('summary', `그 밖의 높은 등급 카드 ${others.length}장 (AR·SR 등)`), list);
+    more.append(el('summary', hits.length ? `그 밖의 높은 등급 카드 ${others.length}장 (AR·SR 등)` : `나머지 시크릿 카드 ${others.length}장`), cardList(others, true));
     box.append(more);
   }
   return box;

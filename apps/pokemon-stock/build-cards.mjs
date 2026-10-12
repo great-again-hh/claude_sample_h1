@@ -4,7 +4,8 @@
 // 데이터 출처 (둘 다 누구나 쓸 수 있는 공개 자료)
 // - TCGdex (api.tcgdex.net): 팩에 들어 있는 카드 번호·이름·등급. 최신 팩은 일본어판 자료만 있다.
 // - PokeAPI (pokeapi.co): 포켓몬의 한국어 이름. 일본어 카드 이름을 한국어로 바꾸는 데 쓴다.
-// 카드 그림은 저작권이 있고 공개 자료에도 없어서 가져오지 않는다.
+// 카드 그림: TCGdex 에 그림 주소가 있는 카드만 그 주소를 적어 둔다(일본어판 그림, 그림 파일은 TCGdex 서버에 있다).
+// 최신 팩은 그림이 없다.
 import { writeFileSync } from 'node:fs';
 
 // 팩 목록: TCGdex 의 일본어판 팩 번호와 한국어판 이름 (최신 팩이 위).
@@ -118,6 +119,7 @@ for (const pack of PACKS) {
       rarity: code,
       rarityName,
       hit,
+      image: brief.image || null,             // 그림 주소(없으면 null). 뒤에 /low.webp 또는 /high.webp 를 붙여 쓴다
     });
   }
   // 시크릿 카드의 등급이 전부 똑같이 적혀 있으면 아직 자료가 정리되지 않은 것이다 → 등급을 모르는 것으로 둔다

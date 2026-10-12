@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" data-version="14">
+<html lang="ko" data-version="15">
 <head>
   <meta charset="UTF-8">
   <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
@@ -9,7 +9,7 @@
        integrity = 받은 파일이 바뀌지 않았는지 확인하는 지문 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
   <!-- 왼쪽 사이드바: 제목, 조회 버튼, 조회 상태, 권역 체크박스 -->
@@ -87,7 +87,8 @@
     <section id="cards" hidden>
       <h2 id="cards-title"></h2>
       <p id="cards-note">팩을 누르면 그 팩에 들어 있는 가장 높은 등급의 카드가 펼쳐집니다. 뽑힐 확률이나 실제 개봉 결과를 뜻하지 않습니다.
-         카드 그림은 저작권이 있어 싣지 않았고, 최신 팩은 일본어판 자료라 일부 이름이 일본어로 나옵니다.</p>
+         카드 그림은 공개 자료(TCGdex)에 있는 팩만 일본어판 그림으로 보여 주고, 그림이 없는 팩은 글자 카드로 표시합니다.
+         팩 모양은 실제 그림이 아니라 팩마다 색을 정해 직접 그린 것입니다. 최신 팩은 일부 이름이 일본어로 나옵니다.</p>
       <div id="cards-list"></div>
     </section>
 
@@ -120,6 +121,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="script.js?v=14"></script>
+  <script src="script.js?v=15"></script>
 </body>
 </html>
