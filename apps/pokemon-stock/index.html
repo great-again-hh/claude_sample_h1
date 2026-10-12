@@ -5,6 +5,10 @@
   <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>포켓몬 카드 재고조회</title>
+  <!-- Leaflet = 여러 곳에 핀을 꽂을 수 있는 지도 라이브러리. CDN(공개 저장소)에서 불러온다.
+       integrity = 받은 파일이 바뀌지 않았는지 확인하는 지문 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,7 +30,16 @@
     <p id="status" aria-live="polite"></p>
     <p id="fetched-at"></p>
 
-    <!-- 편의점 체크박스: 여러 개를 고를 수 있다. script.js 가 채운다 -->
+    <!-- 초기화: 아래의 모든 선택을 푼다 -->
+    <button id="reset-btn" type="button">초기화</button>
+
+    <!-- 조회 방식 1: 네이버 지도. 체크하면 아래 편의점·권역 선택은 잠긴다(둘 중 하나만 조회) -->
+    <h2>네이버 지도</h2>
+    <div class="checks">
+      <label><input type="checkbox" id="naver-mode"><span>내 주변 판매처 찾기</span><small>반경 10km</small></label>
+    </div>
+
+    <!-- 조회 방식 2: 편의점 재고. 편의점 체크박스는 여러 개를 고를 수 있다. script.js 가 채운다 -->
     <h2>조회할 편의점</h2>
     <form id="chains" class="checks"></form>
 
@@ -36,13 +49,23 @@
     <p id="estimate" aria-live="polite">점포 목록을 불러오는 중...</p>
 
     <p class="notice">
-      체크한 편의점과 권역의 점포만 조회합니다. 조회한 순간의 값이니 방문 전 점포에 확인하세요.
+      네이버 지도와 편의점 중 한 가지 방식으로만 조회합니다. 조회한 순간의 값이니 방문 전 점포에 확인하세요.
+      내 위치는 이 브라우저 안에서 거리 계산에만 씁니다.
     </p>
   </header>
 
   <main>
     <!-- 버튼을 누르기 전에 보이는 안내 -->
-    <p id="empty">왼쪽에서 편의점과 권역을 체크하고 [재고 조회] 버튼을 누르면 결과가 여기에 나옵니다.</p>
+    <p id="empty">왼쪽에서 네이버 지도, 또는 편의점과 권역을 체크하고 [재고 조회] 버튼을 누르면 결과가 여기에 나옵니다.</p>
+
+    <!-- 네이버 지도 방식의 결과: 내 위치 10km 안의 판매처를 지도와 목록으로 -->
+    <section id="places" hidden>
+      <h2 id="places-title"></h2>
+      <p id="places-note"></p>
+      <p><a id="naver-link" target="_blank" rel="noopener">네이버 지도에서 전체 결과 보기 ↗</a></p>
+      <div id="map" role="region" aria-label="주변 판매처 지도"></div>
+      <ul id="places-list"></ul>
+    </section>
 
     <!-- hidden: 처음에는 숨겨 두고, 조회가 끝난 뒤 JS 가 보이게 한다 -->
     <section id="result" hidden>
@@ -66,10 +89,13 @@
 
   <footer>
     <p>편의점마다 입력한 검색어로 찾은 첫 번째 상품의 재고를 조회합니다. 어떤 상품이 골라졌는지는 요약 카드에 나옵니다.
+       네이버 지도 방식은 네이버 지역 검색 결과이며 재고는 알 수 없습니다.
        이마트24는 재고 기록이 없는 점포가 "확인불가"로 집계됩니다. 세븐일레븐은 재고를 조회하지 않습니다.</p>
     <p>출처: 공개 재고조회 서버 mcp.aka.page (각 편의점 앱 데이터 기반, 비공식 조회 결과). <span id="built-at"></span></p>
   </footer>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="script.js"></script>
 </body>
 </html>

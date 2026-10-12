@@ -2,6 +2,7 @@
 // 이 파일이 하는 일:
 //   1) 저장해 둔 점포 목록(stores.json)을 읽어 권역 체크박스를 만든다.
 //   2) [재고 조회] 버튼 → 체크한 권역의 점포만 공개 서버에 실시간 조회(진행률 %).
+//      네이버 지도를 체크했으면 편의점 대신 내 위치 10km 안의 판매처를 찾아 지도에 띄운다.
 //   3) 편의점별 점포 수 요약 → 재고가 있는 점포만 목록으로 → 점포를 누르면 지도.
 // 데이터를 화면에 넣을 때는 항상 textContent 를 쓴다(글자로만 들어가서 안전하다).
 
@@ -66,7 +67,7 @@ const chainName = id => CHAINS.find(c => c.id === id).name;
 // ---------- 3. 화면 상태와 도우미 ----------
 
 let catalog = null;     // stores.json 내용: 권역 목록(regions)과 점포 목록(stores)
-let result = null;      // 마지막 조회 결과: { stores, failed }
+let result = null;      // 마지막 편의점 조회 결과: { stores, failed, calls, chains, matched, reason, keyword }
 let chainFilter = null; // 요약 카드를 눌러 고른 편의점 id (없으면 전체)
 let me = null;          // 내 위치 [위도, 경도]. 이 브라우저 안에서 거리 계산에만 쓰고 어디에도 보내거나 저장하지 않는다
 
@@ -177,7 +178,8 @@ function updateEstimate() {
   const storesIn = r => chains.reduce((sum, c) => sum + r.count[c.id], 0);
   for (const r of catalog.regions) $('n-' + r.id).textContent = `점포 ${storesIn(r)}곳`;
 
-  if (chains.length === 0 || regions.length === 0) { $('estimate').textContent = '조회할 편의점과 권역을 체크하세요.'; return; }
+  if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · 내 위치 10km 안의 판매처를 찾습니다(조회 최대 8회). 편의점 선택은 잠깁니다.'; return; }
+  if (chains.length === 0 || regions.length === 0) { $('estimate').textContent = '네이버 지도, 또는 편의점과 권역을 체크하세요.'; return; }
   const stores = regions.reduce((sum, r) => sum + storesIn(r), 0);
   const calls = buildTasks(regions, chains).length;
   const seconds = Math.ceil(calls * 1.4 / PARALLEL); // 조회 1회에 약 1.4초
@@ -187,7 +189,7 @@ function updateEstimate() {
 
 // ---------- 5. 실시간 조회 ----------
 
-// 서버의 조회 도구 하나를 부른다. 실패하면 오류를 던진다(throw).
+// 서버의 조회 도구 하나를 부른다. 실패하면 서버가 알려 준 이유를 담아 오류를 던진다(throw).
 async function callTool(name, args) {
   const res = await fetch(API, {
     method: 'POST',
@@ -197,11 +199,42 @@ async function callTool(name, args) {
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const msg = parseSse(await res.text());
-  if (msg.error || msg.result.isError) throw new Error('조회 도구 오류');
+  if (msg.error) throw new Error(msg.error.message || '서버 오류');
+  if (msg.result.isError) throw new Error(msg.result.content[0].text.slice(0, 200));
   return msg.result.structuredContent || JSON.parse(msg.result.content[0].text);
 }
 
-// 체크한 편의점·권역의 점포만 조회한다: 조회 목록을 만들고 → 차례로 부르며 진행률을 올리고 → 결과를 돌려준다
+// 실패 이유를 화면에 보여 줄 짧은 말로 바꾼다
+function reasonText(e) {
+  const text = String((e && e.message) || e);
+  if (e && e.name === 'TimeoutError') return '서버 응답이 10초 넘게 지연됨';
+  if (/찾을 수 없|검색된 상품 없음/.test(text)) return '검색된 상품 없음';
+  if (/인증/.test(text)) return '서버의 재고 서비스 인증 오류 (서버 운영자가 복구해야 함)';
+  if (/RELAY|릴레이/.test(text)) return '서버와 편의점 사이의 연결 오류';
+  if (/403|Forbidden/.test(text)) return '편의점 서버가 요청을 거부함';
+  return '서버 오류';
+}
+console.assert(reasonText(new Error('상품 검색 결과에서 PLU 코드를 찾을 수 없습니다.')) === '검색된 상품 없음', 'reasonText');
+
+// 일꾼 PARALLEL 명이 목록에서 하나씩 꺼내 처리한다 (한꺼번에 다 보내면 서버에 부담이 된다)
+async function pool(list, work) {
+  let next = 0;
+  await Promise.all(Array.from({ length: PARALLEL }, async () => {
+    while (next < list.length) await work(list[next++]);
+  }));
+}
+
+// 진행 막대와 상태 글자를 바꾼다
+function showProgress(done, total, label) {
+  const percent = total ? Math.round(done / total * 100) : 100;
+  $('bar').value = percent;
+  $('status').textContent = `${percent}% · ${label} (${done}/${total})`;
+}
+
+// 체크한 편의점·권역의 점포만 조회한다.
+//   1단계: 편의점마다 한 곳만 먼저 조회해 "어떤 상품이 골라지는지" 정한다. 못 정하면 그 편의점은 건너뛴다.
+//   2단계: 나머지 조회 지점을 차례로 조회한다.
+//   3단계: 실패한 조회만 한 번 더 시도한다.
 async function queryLive(regions, chains, keyword) {
   // 대상 점포: 저장된 목록에서 체크한 권역·편의점의 점포만 고른다. 재고(stock)는 조회하며 채운다.
   const regionIds = regions.map(r => r.id);
@@ -215,108 +248,286 @@ async function queryLive(regions, chains, keyword) {
   for (const id of chainIds) { failed[id] = 0; calls[id] = tasks.filter(t => t.chain === id).length; }
   let done = 0;
 
-  const step = label => {
-    const percent = total ? Math.round(done / total * 100) : 100;
-    $('bar').value = percent;
-    $('status').textContent = `${percent}% · ${label} (${done}/${total})`;
-  };
+  const matched = {}; // 편의점마다 골라진 상품: { code: 바코드, name: 상품명, word: 통한 검색어 }
+  const reason = {};  // 편의점 전체를 조회하지 못했을 때의 이유
 
-  // 편의점마다 검색어로 골라진 상품을 기억한다: { code: 바코드, name: 상품명 }. 검색 결과가 없으면 null.
-  const matched = {};
   // 같은 편의점의 조회가 모두 같은 상품을 보고 있는지 확인한다. 다른 상품이 골라졌으면 그 응답은 버린다.
-  const lock = (chain, code, name) => {
-    if (!code) { if (!(chain in matched)) matched[chain] = null; throw new Error('검색된 상품 없음'); }
-    if (!matched[chain]) matched[chain] = { code, name: name || keyword };
+  const lock = (chain, code, name, word) => {
+    if (!code) throw new Error('검색된 상품 없음');
+    if (!matched[chain]) matched[chain] = { code, name: name || word, word };
     if (matched[chain].code !== code) throw new Error('다른 상품이 선택됨');
   };
 
-  // 조회 1회: 응답에 나온 점포 중 대상 점포에만 수량을 적는다
-  async function runTask({ region, chain, point }) {
-    const at = { keyword, latitude: point[0], longitude: point[1] };
+  // 조회 1회: 응답에 나온 점포 중 대상 점포에만 수량을 적는다. 실패하면 오류를 던진다.
+  async function ask({ region, chain, point }, word) {
+    const at = { keyword: word, latitude: point[0], longitude: point[1] };
     const code = matched[chain] && matched[chain].code; // 이미 골라진 상품이 있으면 바코드로 정확히 지정한다
-    try {
-      if (chain === 'cu') {
-        // CU: 검색어로만 상품을 고를 수 있다. 좌표 주변 약 1km 의 점포 수량이 온다.
-        const d = await callTool('cu_check_inventory', { ...at, storeLimit: 100 });
-        lock(chain, d.nearbyStores.stockItemCode, d.nearbyStores.stockItemName);
-        for (const s of d.nearbyStores.stores) {
-          const t = targets.get('cu' + s.storeCode);
-          if (t) t.stock.qty = s.stock;
-        }
-      } else if (chain === 'gs25') {
-        // GS25: 좌표 주변 약 1km, 최대 50곳의 수량이 온다.
-        const d = await callTool('gs25_check_inventory', { ...at, ...(code && { itemCode: code }), storeLimit: 100 });
-        lock(chain, d.itemCode, d.product && d.product.name);
-        for (const s of d.inventory.stores) {
-          const t = targets.get('gs25' + s.storeCode);
-          if (t) t.stock.qty = s.realStockQuantity;
-        }
-      } else {
-        const d = await callTool('emart24_check_inventory', { ...at, ...(code && { pluCd: code }), area1: region.area1, area2: region.area2, storeLimit: 40 });
-        lock(chain, d.pluCd, d.inventory.goodsInfo && d.inventory.goodsInfo.goodsNm);
-        // 이마트24: 재고 기록이 있는 점포만 inventory.stores 에 나온다(0개 포함). 없는 점포는 확인불가로 남는다.
-        for (const i of d.inventory.stores) {
-          const near = d.nearbyStores.stores.find(s => s.storeCode === i.bizNo || s.storeName === i.storeName);
-          const t = near && targets.get('emart24' + near.storeCode);
-          if (t) t.stock.qty = i.bizQty;
-        }
+    if (chain === 'cu') {
+      // CU: 검색어로만 상품을 고를 수 있다. 좌표 주변 약 1km 의 점포 수량이 온다.
+      const d = await callTool('cu_check_inventory', { ...at, storeLimit: 100 });
+      lock(chain, d.nearbyStores.stockItemCode, d.nearbyStores.stockItemName, word);
+      for (const s of d.nearbyStores.stores) {
+        const t = targets.get('cu' + s.storeCode);
+        if (t) t.stock.qty = s.stock;
       }
-    } catch (e) {
-      failed[chain]++;
+    } else if (chain === 'gs25') {
+      // GS25: 좌표 주변 약 1km, 최대 50곳의 수량이 온다.
+      const d = await callTool('gs25_check_inventory', { ...at, ...(code && { itemCode: code }), storeLimit: 100 });
+      lock(chain, d.itemCode, d.product && d.product.name, word);
+      for (const s of d.inventory.stores) {
+        const t = targets.get('gs25' + s.storeCode);
+        if (t) t.stock.qty = s.realStockQuantity;
+      }
+    } else {
+      const d = await callTool('emart24_check_inventory', { ...at, ...(code && { pluCd: code }), area1: region.area1, area2: region.area2, storeLimit: 40 });
+      lock(chain, d.pluCd, d.inventory.goodsInfo && d.inventory.goodsInfo.goodsNm, word);
+      // 이마트24: 재고 기록이 있는 점포만 inventory.stores 에 나온다(0개 포함). 없는 점포는 확인불가로 남는다.
+      for (const i of d.inventory.stores) {
+        const near = d.nearbyStores.stores.find(s => s.storeCode === i.bizNo || s.storeName === i.storeName);
+        const t = near && targets.get('emart24' + near.storeCode);
+        if (t) t.stock.qty = i.bizQty;
+      }
     }
-    done++;
-    step(`${region.name} ${chainName(chain)} 조회 중`);
   }
 
-  // 일꾼 PARALLEL 명이 목록에서 하나씩 꺼내 처리한다 (한꺼번에 다 보내면 서버에 부담이 된다)
-  step('조회 시작');
-  let next = 0;
-  await Promise.all(Array.from({ length: PARALLEL }, async () => {
-    while (next < tasks.length) await runTask(tasks[next++]);
-  }));
+  // 검색어 후보: 적은 그대로, 그리고 띄어쓰기를 없앤 것.
+  // (이마트24는 "포켓몬 카드"로는 상품을 못 찾고 "포켓몬카드"로는 찾는다)
+  const words = [...new Set([keyword, keyword.replace(/\s+/g, '')])];
+  if (words.length === 1) words.push(keyword); // 후보가 하나뿐이면 같은 검색어로 한 번 더 시도한다
 
-  step('완료');
+  // 1단계
+  const rest = [];
+  for (const chain of chains.filter(c => !c.note)) {
+    const mine = tasks.filter(t => t.chain === chain.id);
+    if (mine.length === 0) continue;
+    showProgress(done, total, `${chain.name} 상품 확인 중`);
+    let error = null;
+    for (const word of words) {
+      try { await ask(mine[0], word); error = null; break; } catch (e) { error = e; }
+    }
+    if (error) {
+      // 상품을 정하지 못했으면 이 편의점의 나머지 조회는 해 봐야 소용없으니 건너뛴다
+      reason[chain.id] = reasonText(error);
+      failed[chain.id] = mine.length;
+      done += mine.length;
+    } else {
+      done++;
+      rest.push(...mine.slice(1));
+    }
+  }
+
+  // 2단계
+  const again = [];
+  await pool(rest, async task => {
+    try { await ask(task, matched[task.chain].word); done++; } catch (e) { again.push(task); }
+    showProgress(done, total, `${task.region.name} ${chainName(task.chain)} 조회 중`);
+  });
+
+  // 3단계
+  await pool(again, async task => {
+    try { await ask(task, matched[task.chain].word); } catch (e) { failed[task.chain]++; }
+    done++;
+    showProgress(done, total, `${task.region.name} ${chainName(task.chain)} 다시 조회 중`);
+  });
+  showProgress(total, total, '완료');
 
   // 응답에 한 번도 나오지 않은 점포는 값이 비어 있다 → 확인불가(null)로 채운다
   const stores = [...targets.values()];
   for (const s of stores) if (!('qty' in s.stock)) s.stock.qty = null;
 
-  return { stores, failed, calls, chains, matched, keyword };
+  return { stores, failed, calls, chains, matched, reason, keyword };
 }
 
-// [재고 조회] 버튼
-$('load-btn').addEventListener('click', async () => {
-  if (!catalog) return;
+// 조회 중에는 버튼을 잠그고 진행 막대를 보여 준다
+function setBusy(busy) {
+  $('load-btn').disabled = busy;
+  $('bar').hidden = !busy;
+  if (busy) $('bar').value = 0;
+}
+
+// 편의점 재고 조회를 실행하고 결과를 그린다
+async function runStores(keyword) {
   const regions = checkedRegions();
   const chains = checkedChains();
-  const keyword = $('keyword').value.trim(); // trim: 앞뒤 공백 제거
-  if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
   if (chains.length === 0 || regions.length === 0) { $('status').textContent = '조회할 편의점과 권역을 하나 이상 체크하세요.'; return; }
-  localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
 
-  const btn = $('load-btn');
   // 조회와 동시에 내 위치를 묻는다. 기다리지 않고, 위치를 알게 되면 그때 목록을 가까운 순으로 다시 그린다.
-  locate().then(pos => { me = pos; if (result && !btn.disabled) renderList(); });
-  btn.disabled = true; // 조회 중에 또 누르지 못하게 막는다
-  $('bar').hidden = false;
-  $('bar').value = 0;
+  locate().then(pos => { me = pos; if (result && !$('load-btn').disabled && !$('result').hidden) renderList(); });
+  setBusy(true);
   result = await queryLive(regions, chains, keyword);
-  btn.disabled = false;
-  $('bar').hidden = true;
+  setBusy(false);
 
-  const total = Object.values(result.calls).reduce((a, b) => a + b, 0);
-  const failed = Object.values(result.failed).reduce((a, b) => a + b, 0);
-  const found = Object.values(result.matched);
-  const noProduct = found.length > 0 && found.every(m => m === null); // 모든 편의점에서 검색 결과가 없었다
-  $('status').textContent = noProduct ? '검색된 상품이 없습니다. 검색어를 바꿔 보세요.'
-    : total > 0 && failed === total ? '재고를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
+  const reasons = Object.values(result.reason);
+  const asked = chains.filter(c => !c.note).length;
+  $('status').textContent = asked > 0 && reasons.length === asked
+    ? (reasons.every(r => r === '검색된 상품 없음') ? '검색된 상품이 없습니다. 검색어를 바꿔 보세요.' : '재고를 조회하지 못했습니다. 요약 카드의 이유를 확인하세요.')
+    : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16); // sv-SE 형식 = "2026-10-11 20:24"
   chainFilter = null;
   $('scope').textContent = `검색어: ${keyword} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`;
   $('empty').hidden = true;
+  $('places').hidden = true;
   $('result').hidden = false;
   renderSummary();
   renderList();
+}
+
+// [재고 조회] 버튼: 네이버 지도가 체크돼 있으면 주변 판매처 찾기, 아니면 편의점 재고 조회
+$('load-btn').addEventListener('click', async () => {
+  if (!catalog) return;
+  const keyword = $('keyword').value.trim(); // trim: 앞뒤 공백 제거
+  if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
+  localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
+  if ($('naver-mode').checked) await runPlaces(keyword);
+  else await runStores(keyword);
+});
+
+// ---------- 5-2. 네이버 지도: 내 위치 10km 안의 판매처 찾기 ----------
+// 공개 서버의 "네이버 지역 검색" 도구를 쓴다. 이 도구는 좌표가 아니라 "지역 이름 + 검색어"로 찾고 한 번에 5곳까지만 준다.
+// 그래서 내 주변의 구·동 이름 여러 개로 나눠 검색한 뒤 합치고, 10km 안의 곳만 남긴다.
+// 내 좌표는 어디에도 보내지 않는다. 주변 지역 이름은 저장된 점포 목록의 주소에서 알아낸다.
+const RADIUS = 10000; // 반경 10km
+const MAX_AREAS = 8;  // 검색에 쓸 지역 이름 수(= 서버 호출 횟수)
+let map = null;       // 지도(Leaflet)
+
+// 점포 주소에서 검색에 쓸 지역 이름을 꺼낸다: "경기도 수원시 영통구 … (이의동)" → { gu: '수원 영통구', dong: '수원 이의동' }
+function areaNames(address) {
+  const t = address.split(' ');
+  const seoul = t[0].startsWith('서울');
+  const city = seoul ? '서울' : (t[1] || '').replace(/시$/, '');
+  const gu = seoul ? t[1] : t[2];
+  const dong = (address.match(/\(([가-힣0-9]+동)/) || [])[1];
+  return { gu: gu ? `${city} ${gu}` : null, dong: dong ? `${city} ${dong}` : null };
+}
+console.assert(areaNames('경기도 수원시 영통구 웰빙타운로49번길 36, (이의동)').gu === '수원 영통구', 'areaNames: 구');
+console.assert(areaNames('서울 강남구 테헤란로 101, A동 10호(역삼1동 821-1)').dong === '서울 역삼1동', 'areaNames: 동');
+
+async function runPlaces(keyword) {
+  setBusy(true);
+  $('status').textContent = '내 위치를 확인하는 중...';
+  me = await locate();
+  if (!me) {
+    setBusy(false);
+    $('status').textContent = '내 위치를 알 수 없어 조회하지 못했습니다. 브라우저에서 이 사이트의 위치 사용을 허용한 뒤 다시 눌러 주세요.';
+    return;
+  }
+
+  // 내 주변(10km 안) 점포들의 주소에서 지역 이름을 가까운 순으로 모은다: 구 이름 먼저, 그다음 동 이름
+  const near = catalog.stores
+    .map(s => ({ s, d: distanceM(me, [s.lat, s.lng]) }))
+    .filter(x => x.d <= RADIUS)
+    .sort((a, b) => a.d - b.d);
+  const gus = [], dongs = [];
+  for (const { s } of near) {
+    const n = areaNames(s.address);
+    if (n.gu && !gus.includes(n.gu)) gus.push(n.gu);
+    if (n.dong && !dongs.includes(n.dong)) dongs.push(n.dong);
+  }
+  const areas = [...gus.slice(0, 4), ...dongs].slice(0, MAX_AREAS);
+
+  const found = new Map(); // "이름+주소" → 장소 (같은 곳이 여러 번 나오면 하나로)
+  let done = 0, failedCalls = 0;
+  showProgress(0, areas.length, '주변 판매처 찾는 중');
+  await pool(areas, async area => {
+    try {
+      const d = await callTool('places_search_nearby', { location: area, keyword, category: 'all', limit: 5 });
+      for (const p of d.places) {
+        const place = { name: p.name, category: p.category, address: p.roadAddress || p.address, lat: Number(p.latitude), lng: Number(p.longitude) };
+        place.distance = distanceM(me, [place.lat, place.lng]);
+        if (place.distance <= RADIUS) found.set(place.name + place.address, place); // NaN 좌표는 이 비교에서 걸러진다
+      }
+    } catch (e) { failedCalls++; }
+    done++;
+    showProgress(done, areas.length, `${area} 검색 중`);
+  });
+  setBusy(false);
+
+  const list = [...found.values()].sort((a, b) => a.distance - b.distance);
+  $('status').textContent = areas.length === 0 ? '내 위치 10km 안에 저장된 점포가 없어 주변 지역 이름을 알 수 없습니다. 서울 서초·강남·송파·중구, 수원, 분당 근처에서만 쓸 수 있습니다.'
+    : failedCalls === areas.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
+  $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16);
+  $('empty').hidden = true;
+  $('result').hidden = true;
+  $('places').hidden = false;
+  renderPlaces(list, keyword, areas);
+}
+
+// 주변 판매처를 지도와 목록으로 그린다
+function renderPlaces(list, keyword, areas) {
+  $('places-title').textContent = `내 위치 10km 안의 "${keyword}" 판매처 ${list.length}곳`;
+  $('places-note').textContent = list.length
+    ? '네이버 지역 검색 결과를 가까운 순으로 보여 줍니다. 지역 이름 하나에 5곳까지만 나와서 전부는 아닐 수 있고, 재고는 알 수 없습니다. 지도 바탕은 오픈스트리트맵입니다.'
+    : '10km 안에서 검색된 곳이 없습니다. 검색어를 바꿔 보거나 아래 링크로 네이버 지도에서 직접 찾아보세요.';
+  // 네이버 지도 전체 결과로 가는 링크: 가장 가까운 지역 이름 + 검색어 (내 좌표는 넣지 않는다)
+  $('naver-link').href = 'https://map.naver.com/p/search/' + encodeURIComponent(`${areas[0] || ''} ${keyword}`.trim());
+
+  // 지도: Leaflet(CDN 에서 불러온 지도 라이브러리)이 준비돼 있을 때만 그린다
+  const markers = [];
+  $('map').hidden = !window.L;
+  if (window.L) {
+    if (map) map.remove(); // 이전 지도를 지우고 새로 만든다
+    map = L.map('map');
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const circle = L.circle(me, { radius: RADIUS, color: '#111111', weight: 2, fillOpacity: 0.04 }).addTo(map);
+    L.circleMarker(me, { radius: 8, color: '#111111', fillColor: '#ffd23f', fillOpacity: 1 }).addTo(map).bindTooltip('내 위치');
+    for (const p of list) {
+      // 말풍선 내용은 글자로만 넣는다(textContent)
+      const box = el('div');
+      box.append(el('strong', p.name), el('br'), el('span', `${p.address} · ${distanceLabel(p.distance)}`));
+      markers.push(L.marker([p.lat, p.lng]).addTo(map).bindPopup(box));
+    }
+    map.fitBounds(list.length ? L.latLngBounds([me, ...list.map(p => [p.lat, p.lng])]).pad(0.2) : circle.getBounds());
+  }
+
+  // 목록: 누르면 지도에서 그 곳의 말풍선이 열린다
+  $('places-list').replaceChildren(...list.map((p, i) => {
+    const li = el('li');
+    const btn = el('button', '', 'store');
+    btn.type = 'button';
+    btn.append(el('strong', p.name), el('span', p.address, 'where'), el('span', distanceLabel(p.distance), 'where'));
+    const tags = el('span', '', 'stocks');
+    tags.append(el('span', p.category || '분류 없음', 'stock'));
+    btn.append(tags);
+    btn.addEventListener('click', () => {
+      if (!markers[i]) return;
+      map.setView([p.lat, p.lng], 16);
+      markers[i].openPopup();
+      $('map').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    const link = el('a', '네이버 지도에서 보기');
+    link.href = 'https://map.naver.com/p/search/' + encodeURIComponent(p.name);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    li.append(btn, link);
+    return li;
+  }));
+}
+
+// ---------- 5-3. 조회 방식 고르기와 초기화 ----------
+
+// 네이버 지도를 체크하면 편의점·권역 선택은 쓸 수 없게 잠근다(둘 중 하나만 조회한다)
+function applyMode() {
+  const naver = $('naver-mode').checked;
+  localStorage.setItem('pokemon-stock-naver', naver ? '1' : '');
+  for (const node of document.querySelectorAll('#chains input, #regions input, #regions button')) node.disabled = naver;
+  if (catalog) updateEstimate();
+}
+$('naver-mode').addEventListener('change', applyMode);
+
+// [초기화] 버튼: 모든 선택을 풀고, 검색어는 기본값으로, 결과 화면은 처음 상태로 되돌린다
+$('reset-btn').addEventListener('click', () => {
+  for (const input of document.querySelectorAll('#naver-mode, #chains input, #regions input')) input.checked = false;
+  $('keyword').value = '포켓몬 카드';
+  $('store-search').value = '';
+  localStorage.removeItem('pokemon-stock-keyword');
+  result = null;
+  chainFilter = null;
+  $('status').textContent = '';
+  $('fetched-at').textContent = '';
+  $('result').hidden = true;
+  $('places').hidden = true;
+  $('empty').hidden = false;
+  applyMode();
 });
 
 // ---------- 6. 결과 화면 ----------
@@ -338,10 +549,11 @@ function renderSummary() {
     } else {
       // 이 편의점에서 검색어로 골라진 상품. 원하는 상품이 아니면 검색어를 더 구체적으로 적으면 된다.
       const m = result.matched[chain.id];
-      card.append(el('small', m ? `상품: ${m.name}` : m === null ? '검색된 상품이 없습니다' : '상품을 확인하지 못했습니다', 'product'));
+      const why = result.reason[chain.id]; // 이 편의점 전체를 조회하지 못한 이유(없으면 정상)
+      card.append(el('small', m ? `상품: ${m.name}` : why === '검색된 상품 없음' ? '검색된 상품이 없습니다' : `조회 불가: ${why || '조회할 지점 없음'}`, 'product'));
       card.append(el('span', `재고 있음 ${sum.inStock}곳`, sum.inStock > 0 ? 'count in' : 'count'));
       card.append(el('small', `품절 ${sum.soldOut}곳 · 확인불가 ${sum.unknown}곳`));
-      if (result.failed[chain.id] && m !== null) card.append(el('small', `조회 ${result.calls[chain.id]}회 중 ${result.failed[chain.id]}회 실패`));
+      if (result.failed[chain.id] && !why) card.append(el('small', `조회 ${result.calls[chain.id]}회 중 ${result.failed[chain.id]}회 실패`));
     }
     // 카드를 누르면 아래 목록을 그 편의점만으로 좁힌다. 다시 누르면 전체로 돌아간다.
     card.addEventListener('click', () => {
@@ -450,6 +662,8 @@ fetch('stores.json')
     $('built-at').textContent = `점포 목록 저장일: ${catalog.builtAt.slice(0, 10)} (점포 ${catalog.stores.length}곳)`;
     renderChains();
     renderRegions();
+    $('naver-mode').checked = !!localStorage.getItem('pokemon-stock-naver');
+    applyMode();
   })
   // 파일을 더블클릭해 연 화면(file://)에서는 브라우저가 fetch 를 막는다. 서버나 배포 주소로 열어야 한다.
   .catch(() => { $('estimate').textContent = '점포 목록(stores.json)을 불러오지 못했습니다.'; });

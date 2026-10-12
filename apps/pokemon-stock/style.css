@@ -97,6 +97,21 @@ button:disabled { cursor: wait; background: var(--card); color: var(--dim); tran
 #bar::-webkit-progress-value { background: var(--point); border-right: var(--line); transition: width 0.3s; } /* 크롬·사파리 */
 #bar::-moz-progress-bar { background: var(--point); }                                                         /* 파이어폭스 */
 
+/* 초기화 버튼: 조회 버튼보다 작고 조용하게, 오른쪽 끝에 */
+#reset-btn { display: block; margin: 14px 0 0 auto; min-height: 30px; padding: 2px 12px; font-weight: 700; box-shadow: 2px 2px 0 var(--ink); }
+
+/* 잠긴(disabled) 체크박스와 그 이름표는 흐리게 */
+header label:has(input:disabled), legend .all:disabled { opacity: 0.4; cursor: not-allowed; }
+fieldset:has(input:disabled) { background: transparent; }
+
+/* 주변 판매처 지도 */
+#map { height: 420px; margin: 10px 0 14px; border: var(--line); border-radius: 8px; box-shadow: var(--shadow); z-index: 0; }
+#map[hidden] { display: none; }
+#places-note { margin: 0 0 6px; color: var(--dim); font-size: 12px; }
+#places-list { list-style: none; padding: 0; margin: 0; }
+#places-list li { margin-bottom: 10px; }
+#places-list a { display: inline-block; padding: 6px 0 0; font-size: 12px; }
+
 #status { margin: 8px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; } /* tabular-nums = 숫자 폭을 같게 해 글자가 흔들리지 않게 */
 #status:empty, #fetched-at:empty { display: none; } /* :empty = 내용이 없을 때는 자리도 차지하지 않게 */
 #fetched-at { display: inline-block; margin: 12px 0 0; padding: 2px 8px; background: var(--ink); color: var(--card); font-weight: 700; font-size: 12px; }
