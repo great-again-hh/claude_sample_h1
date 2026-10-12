@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '15';
+const VERSION = '16';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -894,7 +894,7 @@ $('keyword').value = localStorage.getItem('pokemon-stock-keyword') || $('keyword
 $('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') $('load-btn').click(); });
 
 // 카드 목록을 읽어 "선택하기"의 팩 목록을 만든다
-fetch('cards.json')
+fetch('cards.json?v=' + VERSION) // 주소에 버전을 붙여, 배포 뒤에 브라우저가 예전 자료 파일을 다시 쓰지 않게 한다
   .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
   .then(json => {
     cardData = json;
@@ -906,7 +906,7 @@ fetch('cards.json')
   .catch(() => { $('pick-mode').disabled = true; }); // 카드 목록이 없으면 "선택하기"를 쓸 수 없게 한다
 
 // 저장된 점포 목록을 읽어 편의점·권역 체크박스를 만든다
-fetch('stores.json')
+fetch('stores.json?v=' + VERSION)
   .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
   .then(json => {
     catalog = json;
