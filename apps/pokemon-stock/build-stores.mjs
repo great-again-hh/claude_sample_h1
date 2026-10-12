@@ -2,7 +2,7 @@
 // 실행:  node build-stores.mjs      (점포가 새로 생기거나 없어졌을 때 다시 실행하면 목록이 갱신된다)
 //
 // 하는 일
-// 1. 권역(구)마다 CU, GS25, 이마트24, 세븐일레븐 점포를 공개 재고조회 서버에서 모은다.
+// 1. 권역(구)마다 CU, GS25, 이마트24 점포를 공개 재고조회 서버에서 모은다. (세븐일레븐은 build-seven.mjs)
 // 2. 재고를 조회할 때 쓸 "조회 지점"을 계산한다. 서버가 한 번에 주는 점포 수에 한계가 있어서,
 //    권역의 모든 점포가 빠지지 않도록 지점을 여러 개 고른다.
 // 3. 결과를 stores.json 으로 저장한다(점포명, 주소, 좌표만. 전화번호는 저장하지 않는다).
@@ -96,6 +96,7 @@ function pickPoints(stores, covers) {
 const regionOf = address => REGIONS.find(r => r.match.every(m => address.includes(m)));
 const clean = s => s.replace(/\s+/g, ' ').trim();
 const stores = []; // 모든 편의점의 대상 권역 점포가 여기에 모인다
+const prevRegions = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')).regions : []; // 지난번에 저장한 권역 정보
 
 // ---------- 이마트24: 구 이름으로 40곳씩 페이지를 넘기며 모은다 ----------
 for (const r of REGIONS) {
@@ -155,19 +156,7 @@ for (const [chain, cfg] of Object.entries(NEARBY)) {
   log(`${chain} 완료: 조회 ${centers.length}회(실패 ${failed}), 대상 권역 점포 ${mine.length}곳`);
 }
 
-// ---------- 세븐일레븐: 검색어로 찾은 뒤 주소로 권역을 가린다 (서버의 세븐일레븐 연결이 자주 실패한다) ----------
-for (const r of REGIONS) {
-  try {
-    const list = (await callTool('seveneleven_search_stores', { keyword: r.seven, limit: 1000 })).stores;
-    let count = 0;
-    for (const s of list) {
-      if (regionOf(s.address || '') !== r || stores.some(x => x.chain === 'seveneleven' && x.code === s.storeCode)) continue;
-      stores.push({ chain: 'seveneleven', region: r.id, code: s.storeCode, name: s.storeName, address: clean(s.address), lat: Number(s.latitude), lng: Number(s.longitude) });
-      count++;
-    }
-    log(`세븐일레븐 ${r.name}: ${count}곳`);
-  } catch (e) { log(`세븐일레븐 ${r.name} 실패 (${e.message})`); }
-}
+// 세븐일레븐은 조회 방식이 달라 build-seven.mjs 가 따로 채운다. 여기서는 지난번에 저장한 내용을 그대로 둔다.
 
 // ---------- 이번에 조회가 실패한 곳은 지난번에 저장한 목록을 그대로 쓴다 (실패했다고 목록이 비면 안 된다) ----------
 if (existsSync(OUT)) {
@@ -195,9 +184,11 @@ const regions = REGIONS.map(r => {
     console.assert(mine(chain).every(s => points[chain].some(p => dist(p, [s.lat, s.lng]) <= cfg.stockRadius)), `${r.name} ${chain}: 덮이지 않은 점포가 있음`);
   }
   points.emart24 = pickPoints(mine('emart24'), s => byDist(mine('emart24'), s).slice(0, E24_BATCH));
-  points.seveneleven = []; // 세븐일레븐은 재고 조회를 아직 지원하지 않는다
   const count = {};
   for (const chain of Object.keys(points)) { count[chain] = mine(chain).length; points[chain] = points[chain].map(p => p.map(round)); }
+  // 세븐일레븐의 조회용 검색어는 build-seven.mjs 가 만든 것을 그대로 옮긴다
+  count.seveneleven = mine('seveneleven').length;
+  points.seveneleven = ((prevRegions.find(x => x.id === r.id) || {}).points || {}).seveneleven || [];
   return { id: r.id, group: r.group, name: r.name, area1: r.area1, area2: r.area2, count, points };
 });
 

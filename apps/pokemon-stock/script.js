@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '16';
+const VERSION = '17';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -64,8 +64,7 @@ const PARALLEL = 3; // 동시에 보내는 조회 수. 서버에 부담을 주�
 const CHAINS = [
   { id: 'cu', name: 'CU' },
   { id: 'gs25', name: 'GS25' },
-  // shortcut: 세븐일레븐은 점포 수만 세고 재고는 조회하지 않는다, 서버의 세븐일레븐 연결이 안정되면 CU 처럼 조회 추가
-  { id: 'seveneleven', name: '세븐일레븐', note: '재고 조회 불가 (서버의 세븐일레븐 연결 오류)' },
+  { id: 'seveneleven', name: '세븐일레븐' },
   { id: 'emart24', name: '이마트24' },
 ];
 
@@ -290,6 +289,14 @@ async function queryLive(regions, chains, keywords) {
           const t = targets.get('gs25' + s.storeCode);
           if (t) t.stock[keyword] = s.realStockQuantity;
         }
+      } else if (chain === 'seveneleven') {
+        // 세븐일레븐: 좌표가 아니라 점포 검색어(point = 길 이름 등)로 조회한다. 그 검색어에 걸리는 점포들의 수량이 온다.
+        const d = await callTool('seveneleven_check_inventory', { keyword: word, storeKeyword: point, storeLimit: 50 });
+        lock(chain, d.product && d.product.itemCode, d.product && d.product.itemName, word);
+        for (const s of d.inventory.stores) {
+          const t = targets.get('seveneleven' + s.storeCode);
+          if (t) t.stock[keyword] = s.stockQuantity >= 0 ? s.stockQuantity : null; // -1 = 수량을 알 수 없음
+        }
       } else {
         const d = await callTool('emart24_check_inventory', { ...at, ...(code && { pluCd: code }), area1: region.area1, area2: region.area2, storeLimit: 40 });
         lock(chain, d.pluCd, d.inventory.goodsInfo && d.inventory.goodsInfo.goodsNm, word);
@@ -402,7 +409,7 @@ $('load-btn').addEventListener('click', async () => {
   // 편의점: "선택하기"면 고른 팩 이름들이, 아니면 입력칸의 글자가 검색어다
   if (picking) {
     const packs = checkedPacks();
-    if (packs.length === 0) { $('status').textContent = '조회할 팩을 하나 이상 선택하세요.'; return; }
+    if (packs.length === 0) { $('status').textContent = '조회할 팩을 하나 선택하세요.'; return; }
     await runStores(packs.map(p => p.name));
   } else {
     if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
@@ -584,7 +591,7 @@ const packColor = id => PACK_COLOR[id] || '#ffd23f';
 // "선택하기"에서 체크한 팩들
 const checkedPacks = () => cardData ? cardData.packs.filter(p => $('p-' + p.id).checked) : [];
 
-// "선택하기"를 체크하면 입력칸은 잠기고, 아래에 팩 목록이 나온다(여러 개를 고를 수 있다)
+// "선택하기"를 체크하면 입력칸은 잠기고, 아래에 팩 목록이 나온다(하나만 고를 수 있다)
 function applyPick() {
   const on = $('pick-mode').checked;
   localStorage.setItem('pokemon-stock-pick', on ? '1' : '');
@@ -594,13 +601,14 @@ function applyPick() {
 }
 $('pick-mode').addEventListener('change', applyPick);
 
-// 팩 목록(체크박스)을 만든다
+// 팩 목록을 만든다. radio = 같은 name 끼리는 하나만 고를 수 있는 동그란 선택 버튼
 function renderPacks() {
   const saved = JSON.parse(localStorage.getItem('pokemon-stock-packs') || '[]'); // 지난번에 고른 팩
   for (const p of cardData.packs) {
     const label = el('label');
     const input = el('input');
-    input.type = 'checkbox';
+    input.type = 'radio';
+    input.name = 'pack';
     input.id = 'p-' + p.id;
     input.checked = saved.includes(p.id);
     const hits = p.cards.filter(c => c.hit).length;
@@ -695,9 +703,13 @@ function packPanel(pack) {
   const again = el('button', '다시 보기', 'again');
   again.type = 'button';
   again.hidden = true;
-  cover.addEventListener('click', () => { cover.hidden = true; fan.hidden = false; again.hidden = false; again.focus(); });
-  again.addEventListener('click', () => { fan.hidden = true; again.hidden = true; cover.hidden = false; cover.focus(); });
-  stage.append(cover, fan);
+  cover.addEventListener('click', () => { cover.hidden = true; boxArt.hidden = true; fan.hidden = false; again.hidden = false; again.focus(); });
+  again.addEventListener('click', () => { fan.hidden = true; again.hidden = true; cover.hidden = false; boxArt.hidden = false; cover.focus(); });
+  // 팩 뒤에 놓는 박스 모양(직접 그린 것). 팩을 열면 팩과 함께 사라진다
+  const boxArt = el('div', '', 'box-art');
+  boxArt.setAttribute('aria-hidden', 'true');
+  boxArt.append(el('span', 'BOOSTER BOX'), el('strong', pack.name), el('span', '30팩'));
+  stage.append(boxArt, cover, fan);
   box.append(stage, again);
 
   box.append(cardList(featured, false));
@@ -710,11 +722,25 @@ function packPanel(pack) {
   return box;
 }
 
+// 첫 화면 꾸밈: 그림이 있는 팩에서 번호가 가장 큰 카드를 몇 장 골라 부채꼴로 놓는다
+function renderHero() {
+  const picked = cardData.packs.filter(p => p.cards.length && p.cards.every(c => c.image)).flatMap(p => p.cards.slice(-2)).slice(0, 5);
+  const fan = el('div', '', 'fan');
+  fan.style.setProperty('--n', picked.length);
+  picked.forEach((c, i) => {
+    const card = el('div', '', 'tcg art');
+    card.style.setProperty('--i', i);
+    card.append(cardImage(c));
+    fan.append(card);
+  });
+  if (picked.length) $('hero-cards').append(fan);
+}
+
 // [카드 조회] 버튼: "선택하기"에서 고른 팩의 힛카드를 보여 준다
 $('cards-btn').addEventListener('click', () => {
   if (!cardData) { $('status').textContent = '카드 목록(cards.json)을 불러오지 못했습니다.'; return; }
   const packs = $('pick-mode').checked ? checkedPacks() : [];
-  if (packs.length === 0) { $('status').textContent = '"선택하기"를 체크하고 팩을 하나 이상 고른 뒤 [카드 조회]를 누르세요.'; return; }
+  if (packs.length === 0) { $('status').textContent = '"선택하기"를 체크하고 팩을 하나 고른 뒤 [카드 조회]를 누르세요.'; return; }
   $('status').textContent = '';
   $('cards-title').textContent = `힛카드 · ${packs.map(p => p.name).join(', ')}`;
   $('cards-list').replaceChildren(...packs.map(packPanel));
@@ -748,8 +774,7 @@ function checkHealth() {
         if (!code) throw new Error('검색된 상품 없음');
         state.textContent = '정상';
         state.className = 'state ok';
-        // 세븐일레븐은 서버 연결이 되더라도 이 페이지가 아직 재고 조회를 지원하지 않는다
-        detail.textContent = chain.note ? '서버 연결은 정상 (이 페이지는 재고 조회 미지원)' : '재고 조회 가능';
+        detail.textContent = '재고 조회 가능';
       })
       .catch(e => {
         state.textContent = '오류';
@@ -782,7 +807,7 @@ function renderSummary() {
       for (const keyword of result.keywords) {
         const m = result.matched[chain.id][keyword];
         const why = result.reason[chain.id][keyword];
-        const head = result.keywords.length > 1 ? `${keyword} → ` : '상품: ';
+        const head = result.keywords.length > 1 ? `${keyword} → ` : m ? '상품: ' : '';
         card.append(el('small', head + (m ? m.name : why === '검색된 상품 없음' ? '검색된 상품이 없습니다' : `조회 불가 (${why || '조회할 지점 없음'})`), 'product'));
       }
       card.append(el('span', `재고 있음 ${sum.inStock}곳`, sum.inStock > 0 ? 'count in' : 'count'));
@@ -899,6 +924,7 @@ fetch('cards.json?v=' + VERSION) // 주소에 버전을 붙여, 배포 뒤에 �
   .then(json => {
     cardData = json;
     renderPacks();
+    renderHero();
     $('pick-mode').checked = !!localStorage.getItem('pokemon-stock-pick');
     applyPick();
     $('cards-source').textContent = `카드 자료: ${cardData.source} · ${cardData.builtAt.slice(0, 10)} 저장.`;
