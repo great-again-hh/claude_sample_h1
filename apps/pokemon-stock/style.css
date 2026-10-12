@@ -117,6 +117,18 @@ fieldset:has(input:disabled) { background: transparent; }
 #fetched-at { display: inline-block; margin: 12px 0 0; padding: 2px 8px; background: var(--ink); color: var(--card); font-weight: 700; font-size: 12px; }
 .notice { margin: 16px 0 0; font-size: 12px; }
 
+/* 편의점 연결 상태 박스 4개 */
+#health-wrap { margin-bottom: 24px; }
+#health { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.health-box { padding: 10px 12px; border: var(--line); border-radius: 6px; background: var(--card); box-shadow: var(--shadow); }
+.health-box strong { display: block; font-size: 1.05rem; font-weight: 800; }
+.health-box small { display: block; margin-top: 4px; color: var(--dim); font-size: 12px; }
+/* 상태 꼬리표: 색만으로 구분하지 않고 "정상 / 오류 / 확인 중" 글자를 함께 적는다 */
+.state { display: inline-block; margin-top: 4px; padding: 0 8px; border: 1px solid var(--ink); font-weight: 800; font-size: 12px; }
+.state.ok { background: var(--ok); }
+.state.bad { background: #ffb3b3; }
+#health-note { margin: 8px 0 0; color: var(--dim); font-size: 12px; }
+
 #empty { margin: 0; padding: 40px 16px; border: 2px dashed var(--ink); border-radius: 8px; text-align: center; color: var(--dim); }
 
 /* 요약 카드: 자리가 되면 4개를 한 줄에, 좁으면 자동으로 줄바꿈 */
@@ -189,6 +201,6 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   button, legend .all { min-height: 44px; }
   header label { padding: 10px 0; }
   .map a { padding: 12px 0; }
-  #summary { grid-template-columns: 1fr 1fr; }
+  #summary, #health { grid-template-columns: 1fr 1fr; }
   .store { grid-template-columns: 1fr; }
 }

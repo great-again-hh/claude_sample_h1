@@ -178,7 +178,7 @@ function updateEstimate() {
   const storesIn = r => chains.reduce((sum, c) => sum + r.count[c.id], 0);
   for (const r of catalog.regions) $('n-' + r.id).textContent = `점포 ${storesIn(r)}곳`;
 
-  if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · 내 위치 10km 안의 판매처를 찾습니다(조회 최대 8회). 편의점 선택은 잠깁니다.'; return; }
+  if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · 내 위치 10km 안의 판매처를 찾습니다(조회 최대 16회). 상품 칸이 비어 있으면 포켓몬카드로 찾고, 포켓몬 카드를 찾을 때는 무인문구점도 함께 찾습니다. 편의점 선택은 잠깁니다.'; return; }
   if (chains.length === 0 || regions.length === 0) { $('estimate').textContent = '네이버 지도, 또는 편의점과 권역을 체크하세요.'; return; }
   const stores = regions.reduce((sum, r) => sum + storesIn(r), 0);
   const calls = buildTasks(regions, chains).length;
@@ -376,10 +376,11 @@ async function runStores(keyword) {
 $('load-btn').addEventListener('click', async () => {
   if (!catalog) return;
   const keyword = $('keyword').value.trim(); // trim: 앞뒤 공백 제거
+  if (keyword) localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
+  // 네이버 지도: 입력칸이 비어 있으면 기본 검색어(포켓몬카드)로 찾는다
+  if ($('naver-mode').checked) { await runPlaces(keyword || DEFAULT_PLACE_WORD); return; }
   if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
-  localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
-  if ($('naver-mode').checked) await runPlaces(keyword);
-  else await runStores(keyword);
+  await runStores(keyword);
 });
 
 // ---------- 5-2. 네이버 지도: 내 위치 10km 안의 판매처 찾기 ----------
@@ -387,7 +388,13 @@ $('load-btn').addEventListener('click', async () => {
 // 그래서 내 주변의 구·동 이름 여러 개로 나눠 검색한 뒤 합치고, 10km 안의 곳만 남긴다.
 // 내 좌표는 어디에도 보내지 않는다. 주변 지역 이름은 저장된 점포 목록의 주소에서 알아낸다.
 const RADIUS = 10000; // 반경 10km
-const MAX_AREAS = 8;  // 검색에 쓸 지역 이름 수(= 서버 호출 횟수)
+const MAX_AREAS = 8;  // 검색에 쓸 지역 이름 수 (서버 호출 횟수 = 지역 이름 수 × 검색어 수)
+const DEFAULT_PLACE_WORD = '포켓몬카드'; // 입력칸이 비어 있을 때 쓰는 검색어
+const EXTRA_PLACE_WORD = '무인문구점';   // 포켓몬 카드를 찾을 때 함께 찾는 곳(포켓몬 카드를 파는 경우가 많다)
+
+// 검색어 목록을 정한다: 포켓몬 카드를 찾는 경우에만 무인문구점도 함께 찾는다
+const placeWords = keyword => keyword.replace(/\s+/g, '').includes('포켓몬') ? [keyword, EXTRA_PLACE_WORD] : [keyword];
+console.assert(placeWords('포켓몬 카드').length === 2 && placeWords('레고').length === 1, 'placeWords');
 let map = null;       // 지도(Leaflet)
 
 // 점포 주소에서 검색에 쓸 지역 이름을 꺼낸다: "경기도 수원시 영통구 … (이의동)" → { gu: '수원 영통구', dong: '수원 이의동' }
@@ -425,36 +432,44 @@ async function runPlaces(keyword) {
   }
   const areas = [...gus.slice(0, 4), ...dongs].slice(0, MAX_AREAS);
 
+  // 검색 목록: 지역 이름 × 검색어
+  const words = placeWords(keyword);
+  const searches = areas.flatMap(area => words.map(word => ({ area, word })));
+
   const found = new Map(); // "이름+주소" → 장소 (같은 곳이 여러 번 나오면 하나로)
   let done = 0, failedCalls = 0;
-  showProgress(0, areas.length, '주변 판매처 찾는 중');
-  await pool(areas, async area => {
+  showProgress(0, searches.length, '주변 판매처 찾는 중');
+  await pool(searches, async ({ area, word }) => {
     try {
-      const d = await callTool('places_search_nearby', { location: area, keyword, category: 'all', limit: 5 });
+      const d = await callTool('places_search_nearby', { location: area, keyword: word, category: 'all', limit: 5 });
       for (const p of d.places) {
-        const place = { name: p.name, category: p.category, address: p.roadAddress || p.address, lat: Number(p.latitude), lng: Number(p.longitude) };
+        const place = { name: p.name, category: p.category, address: p.roadAddress || p.address, lat: Number(p.latitude), lng: Number(p.longitude), via: [] };
         place.distance = distanceM(me, [place.lat, place.lng]);
-        if (place.distance <= RADIUS) found.set(place.name + place.address, place); // NaN 좌표는 이 비교에서 걸러진다
+        if (!(place.distance <= RADIUS)) continue; // 10km 밖이거나 좌표가 없는 곳은 뺀다
+        const kept = found.get(place.name + place.address) || place;
+        if (!kept.via.includes(word)) kept.via.push(word); // 어떤 검색어로 찾았는지 적어 둔다
+        found.set(place.name + place.address, kept);
       }
     } catch (e) { failedCalls++; }
     done++;
-    showProgress(done, areas.length, `${area} 검색 중`);
+    showProgress(done, searches.length, `${area} ${word} 검색 중`);
   });
   setBusy(false);
 
   const list = [...found.values()].sort((a, b) => a.distance - b.distance);
   $('status').textContent = areas.length === 0 ? '내 위치 10km 안에 저장된 점포가 없어 주변 지역 이름을 알 수 없습니다. 서울 서초·강남·송파·중구, 수원, 분당 근처에서만 쓸 수 있습니다.'
-    : failedCalls === areas.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
+    : failedCalls === searches.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16);
   $('empty').hidden = true;
   $('result').hidden = true;
   $('places').hidden = false;
-  renderPlaces(list, keyword, areas);
+  renderPlaces(list, words, areas);
 }
 
 // 주변 판매처를 지도와 목록으로 그린다
-function renderPlaces(list, keyword, areas) {
-  $('places-title').textContent = `내 위치 10km 안의 "${keyword}" 판매처 ${list.length}곳`;
+function renderPlaces(list, words, areas) {
+  const keyword = words[0];
+  $('places-title').textContent = `내 위치 10km 안의 ${words.map(w => `"${w}"`).join(' · ')} ${list.length}곳`;
   $('places-note').textContent = list.length
     ? '네이버 지역 검색 결과를 가까운 순으로 보여 줍니다. 지역 이름 하나에 5곳까지만 나와서 전부는 아닐 수 있고, 재고는 알 수 없습니다. 지도 바탕은 오픈스트리트맵입니다.'
     : '10km 안에서 검색된 곳이 없습니다. 검색어를 바꿔 보거나 아래 링크로 네이버 지도에서 직접 찾아보세요.';
@@ -473,7 +488,7 @@ function renderPlaces(list, keyword, areas) {
     for (const p of list) {
       // 말풍선 내용은 글자로만 넣는다(textContent)
       const box = el('div');
-      box.append(el('strong', p.name), el('br'), el('span', `${p.address} · ${distanceLabel(p.distance)}`));
+      box.append(el('strong', p.name), el('br'), el('span', `${p.via.join(', ')} · ${p.address} · ${distanceLabel(p.distance)}`));
       markers.push(L.marker([p.lat, p.lng]).addTo(map).bindPopup(box));
     }
     map.fitBounds(list.length ? L.latLngBounds([me, ...list.map(p => [p.lat, p.lng])]).pad(0.2) : circle.getBounds());
@@ -486,6 +501,7 @@ function renderPlaces(list, keyword, areas) {
     btn.type = 'button';
     btn.append(el('strong', p.name), el('span', p.address, 'where'), el('span', distanceLabel(p.distance), 'where'));
     const tags = el('span', '', 'stocks');
+    for (const word of p.via) tags.append(el('span', word, 'stock in')); // 어떤 검색어로 찾은 곳인지
     tags.append(el('span', p.category || '분류 없음', 'stock'));
     btn.append(tags);
     btn.addEventListener('click', () => {
@@ -529,6 +545,43 @@ $('reset-btn').addEventListener('click', () => {
   $('empty').hidden = false;
   applyMode();
 });
+
+// ---------- 5-4. 편의점 연결 상태 ----------
+// 페이지가 열릴 때 편의점마다 흔한 상품(삼다수)을 강남역 기준으로 한 번씩 조회해 보고,
+// 지금 재고 조회가 되는지를 박스 4개로 보여 준다. (서버 호출 4회)
+const HEALTH_AT = { keyword: '삼다수', latitude: 37.4979, longitude: 127.0276 };
+// 편의점별 시험 조회. 성공하면 골라진 상품의 바코드(또는 true)를 돌려준다.
+const HEALTH_CHECKS = {
+  cu: () => callTool('cu_check_inventory', { ...HEALTH_AT, storeLimit: 1 }).then(d => d.nearbyStores.stockItemCode),
+  gs25: () => callTool('gs25_check_inventory', { ...HEALTH_AT, storeLimit: 1 }).then(d => d.itemCode),
+  seveneleven: () => callTool('seveneleven_check_inventory', { keyword: '삼다수', storeKeyword: '강남', storeLimit: 1 }).then(() => true),
+  emart24: () => callTool('emart24_check_inventory', { ...HEALTH_AT, area1: '서울특별시', area2: '강남구', storeLimit: 1 }).then(d => d.pluCd),
+};
+
+function checkHealth() {
+  $('health').replaceChildren();
+  for (const chain of CHAINS) {
+    const box = el('div', '', 'health-box');
+    const state = el('span', '확인 중…', 'state');
+    const detail = el('small', '시험 조회를 보내는 중');
+    box.append(el('strong', chain.name), state, detail);
+    $('health').append(box);
+    HEALTH_CHECKS[chain.id]()
+      .then(code => {
+        if (!code) throw new Error('검색된 상품 없음');
+        state.textContent = '정상';
+        state.className = 'state ok';
+        // 세븐일레븐은 서버 연결이 되더라도 이 페이지가 아직 재고 조회를 지원하지 않는다
+        detail.textContent = chain.note ? '서버 연결은 정상 (이 페이지는 재고 조회 미지원)' : '재고 조회 가능';
+      })
+      .catch(e => {
+        state.textContent = '오류';
+        state.className = 'state bad';
+        detail.textContent = reasonText(e);
+      });
+  }
+  $('health-note').textContent = `${new Date().toLocaleString('sv-SE').slice(0, 16)}에 편의점마다 한 번씩 시험 조회한 결과입니다. 새로고침하면 다시 확인합니다.`;
+}
 
 // ---------- 6. 결과 화면 ----------
 
@@ -647,6 +700,8 @@ function mapNodes(store) {
 }
 
 // ---------- 7. 시작 ----------
+checkHealth(); // 편의점 연결 상태부터 확인한다
+
 // 점포 검색창: 글자를 적을 때마다 목록을 다시 그린다
 $('store-search').addEventListener('input', () => { if (result) renderList(); });
 
