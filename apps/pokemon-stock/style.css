@@ -236,7 +236,7 @@ button.pack-cover[aria-expanded], button.pack-cover:hover { background: var(--c,
 
 /* 첫 화면: 왼쪽에 안내 글, 오른쪽에 카드 그림 부채꼴 */
 .hero {
-  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: center;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: center; /* 자리가 좁으면 글과 카드가 위아래로 쌓인다 */
   padding: 26px 28px; border: var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden;
   background-color: var(--point);
   background-image: radial-gradient(rgb(255 255 255 / 0.55) 2px, transparent 2.5px); background-size: 18px 18px; /* 물방울 무늬 */
@@ -329,7 +329,7 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   header label { padding: 10px 0; }
   .map a { padding: 12px 0; }
   #summary, #health { grid-template-columns: 1fr 1fr; }
-  .hero { grid-template-columns: 1fr; padding: 20px 16px; }
+  .hero { padding: 20px 16px; }
   .hero-title { font-size: 1.4rem; }
   .hero-cards .fan { --w: 84px; }
   #reset-btn { min-height: 44px; }
