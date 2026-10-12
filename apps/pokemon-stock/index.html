@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" data-version="18">
+<html lang="ko" data-version="19">
 <head>
   <meta charset="UTF-8">
   <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
@@ -9,7 +9,7 @@
        integrity = 받은 파일이 바뀌지 않았는지 확인하는 지문 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
   <!-- 왼쪽 사이드바: 제목, 조회 버튼, 조회 상태, 권역 체크박스 -->
@@ -17,8 +17,12 @@
     <!-- 제목과 초기화 버튼을 한 줄에 -->
     <div class="title-row">
       <h1>포켓몬 카드 <br>재고조회</h1>
-      <!-- 초기화: 아래의 모든 선택을 푼다 -->
-      <button id="reset-btn" type="button">초기화</button>
+      <div class="title-buttons">
+        <!-- 초기화: 아래의 모든 선택을 푼다 -->
+        <button id="reset-btn" type="button">초기화</button>
+        <!-- 일괄 조회: 팩 전체를 모든 권역에서 조회한다(조회 중에는 [중지]로 바뀐다) -->
+        <button id="batch-btn" type="button">일괄 조회</button>
+      </div>
     </div>
     <p class="tagline">서울·수원·판교 편의점</p>
 
@@ -139,6 +143,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="script.js?v=18"></script>
+  <script src="script.js?v=19"></script>
 </body>
 </html>

@@ -103,7 +103,10 @@ button:disabled { cursor: wait; background: var(--card); color: var(--dim); tran
 #bar::-moz-progress-bar { background: var(--point); }                                                         /* 파이어폭스 */
 
 /* 초기화 버튼: 제목 오른쪽에 작고 조용하게 */
-#reset-btn { flex: 0 0 auto; margin-top: 4px; min-height: 30px; padding: 2px 10px; font-size: 12px; font-weight: 700; box-shadow: 2px 2px 0 var(--ink); }
+/* 제목 오른쪽에 초기화와 일괄 조회를 위아래로. 두 버튼은 크기와 글자 크기가 같다 */
+.title-buttons { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; margin-top: 4px; }
+#reset-btn, #batch-btn { min-height: 30px; padding: 2px 10px; font-size: 12px; font-weight: 700; text-align: center; box-shadow: 2px 2px 0 var(--ink); }
+#batch-btn { background: var(--point); }
 
 /* 잠긴(disabled) 체크박스와 그 이름표는 흐리게 */
 header label:has(input:disabled), legend .all:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -293,6 +296,9 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
 
 #store-list { list-style: none; padding: 0; margin: 0; }
 #store-list li { margin-bottom: 8px; }
+/* 일괄 조회 목록의 편의점별 제목 줄 */
+#store-list li.group { margin: 18px 0 8px; padding: 2px 10px; width: fit-content; background: var(--ink); color: var(--card); font-weight: 800; }
+#store-list li.group:first-child { margin-top: 0; }
 
 /* 점포 한 줄을 3칸으로: 점포명 | 주소 | 거리. 그 아래 줄 전체에 상품별 재고 */
 .store {
@@ -332,7 +338,7 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   .hero { padding: 20px 16px; }
   .hero-title { font-size: 1.4rem; }
   .hero-cards .fan { --w: 84px; }
-  #reset-btn { min-height: 44px; }
+  #reset-btn, #batch-btn { min-height: 44px; }
   .fan { --w: 84px; padding: 16px 26px 0; }
   .store { grid-template-columns: 1fr; }
 }
