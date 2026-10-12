@@ -559,6 +559,7 @@ const HEALTH_CHECKS = {
 };
 
 function checkHealth() {
+  if (!$('health')) return; // 브라우저에 예전 페이지가 남아 있어 박스 자리가 없으면 건너뛴다(새로고침하면 나온다)
   $('health').replaceChildren();
   for (const chain of CHAINS) {
     const box = el('div', '', 'health-box');
