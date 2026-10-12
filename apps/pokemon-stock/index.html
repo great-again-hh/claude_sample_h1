@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-version="14">
 <head>
   <meta charset="UTF-8">
   <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
@@ -9,7 +9,7 @@
        integrity = 받은 파일이 바뀌지 않았는지 확인하는 지문 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <!-- 왼쪽 사이드바: 제목, 조회 버튼, 조회 상태, 권역 체크박스 -->
@@ -18,8 +18,14 @@
     <p class="tagline">서울·수원·판교 편의점</p>
 
     <!-- 조회할 상품을 직접 적는 입력칸. label 의 for 와 input 의 id 를 맞추면 글자를 눌러도 입력칸이 선택된다 -->
-    <label for="keyword" class="field">조회할 상품</label>
+    <div class="field-row">
+      <label for="keyword" class="field">조회할 상품</label>
+      <!-- 선택하기: 체크하면 입력칸 대신 아래의 팩 목록에서 고른다 -->
+      <label class="pick"><input type="checkbox" id="pick-mode"><span>선택하기</span></label>
+    </div>
     <input id="keyword" type="text" value="포켓몬 카드" maxlength="40" placeholder="포켓몬 닌자스피너카드" autocomplete="off">
+    <!-- 팩 목록: 선택하기를 체크했을 때만 보인다. 여러 개를 고를 수 있다. script.js 가 cards.json 을 읽어 채운다 -->
+    <form id="packs" class="checks" aria-label="포켓몬 카드 팩" hidden></form>
 
     <!-- 이 버튼을 누르면 script.js 가 체크한 권역의 점포를 공개 재고조회 서버에 실시간으로 물어본다 -->
     <button id="load-btn" type="button">재고 조회</button>
@@ -48,6 +54,9 @@
     <form id="regions"></form>
     <p id="estimate" aria-live="polite">점포 목록을 불러오는 중...</p>
 
+    <!-- 카드 조회: 선택하기에서 고른 팩의 힛카드를 오른쪽에 보여 준다 -->
+    <button id="cards-btn" type="button">카드 조회</button>
+
     <p class="notice">
       네이버 지도와 편의점 중 한 가지 방식으로만 조회합니다. 조회한 순간의 값이니 방문 전 점포에 확인하세요.
       내 위치는 이 브라우저 안에서 거리 계산에만 씁니다.
@@ -74,6 +83,14 @@
       <ul id="places-list"></ul>
     </section>
 
+    <!-- 카드 조회의 결과: 고른 팩마다 힛카드를 보여 준다 -->
+    <section id="cards" hidden>
+      <h2 id="cards-title"></h2>
+      <p id="cards-note">팩을 누르면 그 팩에 들어 있는 가장 높은 등급의 카드가 펼쳐집니다. 뽑힐 확률이나 실제 개봉 결과를 뜻하지 않습니다.
+         카드 그림은 저작권이 있어 싣지 않았고, 최신 팩은 일본어판 자료라 일부 이름이 일본어로 나옵니다.</p>
+      <div id="cards-list"></div>
+    </section>
+
     <!-- hidden: 처음에는 숨겨 두고, 조회가 끝난 뒤 JS 가 보이게 한다 -->
     <section id="result" hidden>
       <h2>편의점별 요약</h2>
@@ -98,11 +115,11 @@
     <p>편의점마다 입력한 검색어로 찾은 첫 번째 상품의 재고를 조회합니다. 어떤 상품이 골라졌는지는 요약 카드에 나옵니다.
        네이버 지도 방식은 네이버 지역 검색 결과이며 재고는 알 수 없습니다.
        이마트24는 재고 기록이 없는 점포가 "확인불가"로 집계됩니다. 세븐일레븐은 재고를 조회하지 않습니다.</p>
-    <p>출처: 공개 재고조회 서버 mcp.aka.page (각 편의점 앱 데이터 기반, 비공식 조회 결과). <span id="built-at"></span></p>
+    <p>출처: 공개 재고조회 서버 mcp.aka.page (각 편의점 앱 데이터 기반, 비공식 조회 결과). <span id="built-at"></span> <span id="cards-source"></span></p>
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=14"></script>
 </body>
 </html>

@@ -6,6 +6,15 @@
 //   3) 편의점별 점포 수 요약 → 재고가 있는 점포만 목록으로 → 점포를 누르면 지도.
 // 데이터를 화면에 넣을 때는 항상 textContent 를 쓴다(글자로만 들어가서 안전하다).
 
+// ---------- 0. 버전 확인 ----------
+// 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
+// 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
+const VERSION = '14';
+if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
+  sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
+  location.reload();
+}
+
 // ---------- 1. 계산만 하는 함수 (화면을 건드리지 않는다) ----------
 
 // 점포 하나에 재고가 있는가? = 상품 중 하나라도 수량이 1 이상
@@ -181,7 +190,8 @@ function updateEstimate() {
   if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · 내 위치 10km 안의 판매처를 찾습니다(조회 최대 16회). 상품 칸이 비어 있으면 포켓몬카드로 찾고, 포켓몬 카드를 찾을 때는 무인문구점도 함께 찾습니다. 편의점 선택은 잠깁니다.'; return; }
   if (chains.length === 0 || regions.length === 0) { $('estimate').textContent = '네이버 지도, 또는 편의점과 권역을 체크하세요.'; return; }
   const stores = regions.reduce((sum, r) => sum + storesIn(r), 0);
-  const calls = buildTasks(regions, chains).length;
+  const words = $('pick-mode').checked ? Math.max(1, checkedPacks().length) : 1; // 조회할 검색어 수(고른 팩 수)
+  const calls = buildTasks(regions, chains).length * words;
   const seconds = Math.ceil(calls * 1.4 / PARALLEL); // 조회 1회에 약 1.4초
   const time = seconds < 60 ? `약 ${seconds}초` : `약 ${Math.ceil(seconds / 60)}분`;
   $('estimate').textContent = `대상 점포 ${stores}곳 · 조회 ${calls}회 · ${time}`;
@@ -231,111 +241,114 @@ function showProgress(done, total, label) {
   $('status').textContent = `${percent}% · ${label} (${done}/${total})`;
 }
 
-// 체크한 편의점·권역의 점포만 조회한다.
+// 체크한 편의점·권역의 점포만 조회한다. 검색어(keywords)가 여러 개면 하나씩 차례로 조회한다.
 //   1단계: 편의점마다 한 곳만 먼저 조회해 "어떤 상품이 골라지는지" 정한다. 못 정하면 그 편의점은 건너뛴다.
 //   2단계: 나머지 조회 지점을 차례로 조회한다.
 //   3단계: 실패한 조회만 한 번 더 시도한다.
-async function queryLive(regions, chains, keyword) {
-  // 대상 점포: 저장된 목록에서 체크한 권역·편의점의 점포만 고른다. 재고(stock)는 조회하며 채운다.
+async function queryLive(regions, chains, keywords) {
+  // 대상 점포: 저장된 목록에서 체크한 권역·편의점의 점포만 고른다. 재고(stock)는 검색어별로 조회하며 채운다.
   const regionIds = regions.map(r => r.id);
   const chainIds = chains.map(c => c.id);
   const targets = new Map(); // "편의점+점포코드" → 점포
   for (const s of catalog.stores) if (regionIds.includes(s.region) && chainIds.includes(s.chain)) targets.set(s.chain + s.code, { ...s, stock: {} });
 
   const tasks = buildTasks(regions, chains);
-  const total = tasks.length;
+  const total = tasks.length * keywords.length;
   const failed = {}, calls = {};
-  for (const id of chainIds) { failed[id] = 0; calls[id] = tasks.filter(t => t.chain === id).length; }
+  const matched = {}; // matched[편의점][검색어] = 골라진 상품 { code: 바코드, name: 상품명, word: 통한 검색어 }
+  const reason = {};  // reason[편의점][검색어] = 그 검색어로 이 편의점을 조회하지 못한 이유
+  for (const id of chainIds) { failed[id] = 0; calls[id] = tasks.filter(t => t.chain === id).length * keywords.length; matched[id] = {}; reason[id] = {}; }
   let done = 0;
 
-  const matched = {}; // 편의점마다 골라진 상품: { code: 바코드, name: 상품명, word: 통한 검색어 }
-  const reason = {};  // 편의점 전체를 조회하지 못했을 때의 이유
+  for (const keyword of keywords) {
+    const head = keywords.length > 1 ? `[${keyword}] ` : ''; // 검색어가 여럿이면 진행 글자 앞에 붙인다
 
-  // 같은 편의점의 조회가 모두 같은 상품을 보고 있는지 확인한다. 다른 상품이 골라졌으면 그 응답은 버린다.
-  const lock = (chain, code, name, word) => {
-    if (!code) throw new Error('검색된 상품 없음');
-    if (!matched[chain]) matched[chain] = { code, name: name || word, word };
-    if (matched[chain].code !== code) throw new Error('다른 상품이 선택됨');
-  };
+    // 같은 편의점의 조회가 모두 같은 상품을 보고 있는지 확인한다. 다른 상품이 골라졌으면 그 응답은 버린다.
+    const lock = (chain, code, name, word) => {
+      if (!code) throw new Error('검색된 상품 없음');
+      if (!matched[chain][keyword]) matched[chain][keyword] = { code, name: name || word, word };
+      if (matched[chain][keyword].code !== code) throw new Error('다른 상품이 선택됨');
+    };
 
-  // 조회 1회: 응답에 나온 점포 중 대상 점포에만 수량을 적는다. 실패하면 오류를 던진다.
-  async function ask({ region, chain, point }, word) {
-    const at = { keyword: word, latitude: point[0], longitude: point[1] };
-    const code = matched[chain] && matched[chain].code; // 이미 골라진 상품이 있으면 바코드로 정확히 지정한다
-    if (chain === 'cu') {
-      // CU: 검색어로만 상품을 고를 수 있다. 좌표 주변 약 1km 의 점포 수량이 온다.
-      const d = await callTool('cu_check_inventory', { ...at, storeLimit: 100 });
-      lock(chain, d.nearbyStores.stockItemCode, d.nearbyStores.stockItemName, word);
-      for (const s of d.nearbyStores.stores) {
-        const t = targets.get('cu' + s.storeCode);
-        if (t) t.stock.qty = s.stock;
+    // 조회 1회: 응답에 나온 점포 중 대상 점포에만 수량을 적는다. 실패하면 오류를 던진다.
+    const ask = async ({ region, chain, point }, word) => {
+      const at = { keyword: word, latitude: point[0], longitude: point[1] };
+      const code = matched[chain][keyword] && matched[chain][keyword].code; // 이미 골라진 상품이 있으면 바코드로 정확히 지정한다
+      if (chain === 'cu') {
+        // CU: 검색어로만 상품을 고를 수 있다. 좌표 주변 약 1km 의 점포 수량이 온다.
+        const d = await callTool('cu_check_inventory', { ...at, storeLimit: 100 });
+        lock(chain, d.nearbyStores.stockItemCode, d.nearbyStores.stockItemName, word);
+        for (const s of d.nearbyStores.stores) {
+          const t = targets.get('cu' + s.storeCode);
+          if (t) t.stock[keyword] = s.stock;
+        }
+      } else if (chain === 'gs25') {
+        // GS25: 좌표 주변 약 1km, 최대 50곳의 수량이 온다.
+        const d = await callTool('gs25_check_inventory', { ...at, ...(code && { itemCode: code }), storeLimit: 100 });
+        lock(chain, d.itemCode, d.product && d.product.name, word);
+        for (const s of d.inventory.stores) {
+          const t = targets.get('gs25' + s.storeCode);
+          if (t) t.stock[keyword] = s.realStockQuantity;
+        }
+      } else {
+        const d = await callTool('emart24_check_inventory', { ...at, ...(code && { pluCd: code }), area1: region.area1, area2: region.area2, storeLimit: 40 });
+        lock(chain, d.pluCd, d.inventory.goodsInfo && d.inventory.goodsInfo.goodsNm, word);
+        // 이마트24: 재고 기록이 있는 점포만 inventory.stores 에 나온다(0개 포함). 없는 점포는 확인불가로 남는다.
+        for (const i of d.inventory.stores) {
+          const near = d.nearbyStores.stores.find(s => s.storeCode === i.bizNo || s.storeName === i.storeName);
+          const t = near && targets.get('emart24' + near.storeCode);
+          if (t) t.stock[keyword] = i.bizQty;
+        }
       }
-    } else if (chain === 'gs25') {
-      // GS25: 좌표 주변 약 1km, 최대 50곳의 수량이 온다.
-      const d = await callTool('gs25_check_inventory', { ...at, ...(code && { itemCode: code }), storeLimit: 100 });
-      lock(chain, d.itemCode, d.product && d.product.name, word);
-      for (const s of d.inventory.stores) {
-        const t = targets.get('gs25' + s.storeCode);
-        if (t) t.stock.qty = s.realStockQuantity;
+    };
+
+    // 검색어 후보: 적은 그대로, 그리고 띄어쓰기를 없앤 것.
+    // (이마트24는 "포켓몬 카드"나 "로켓단의 영광"으로는 못 찾고 "포켓몬카드", "로켓단의영광"으로는 찾는다)
+    const words = [...new Set([keyword, keyword.replace(/\s+/g, '')])];
+    if (words.length === 1) words.push(keyword); // 후보가 하나뿐이면 같은 검색어로 한 번 더 시도한다
+
+    // 1단계
+    const rest = [];
+    for (const chain of chains.filter(c => !c.note)) {
+      const mine = tasks.filter(t => t.chain === chain.id);
+      if (mine.length === 0) continue;
+      showProgress(done, total, `${head}${chain.name} 상품 확인 중`);
+      let error = null;
+      for (const word of words) {
+        try { await ask(mine[0], word); error = null; break; } catch (e) { error = e; }
       }
-    } else {
-      const d = await callTool('emart24_check_inventory', { ...at, ...(code && { pluCd: code }), area1: region.area1, area2: region.area2, storeLimit: 40 });
-      lock(chain, d.pluCd, d.inventory.goodsInfo && d.inventory.goodsInfo.goodsNm, word);
-      // 이마트24: 재고 기록이 있는 점포만 inventory.stores 에 나온다(0개 포함). 없는 점포는 확인불가로 남는다.
-      for (const i of d.inventory.stores) {
-        const near = d.nearbyStores.stores.find(s => s.storeCode === i.bizNo || s.storeName === i.storeName);
-        const t = near && targets.get('emart24' + near.storeCode);
-        if (t) t.stock.qty = i.bizQty;
+      if (error) {
+        // 상품을 정하지 못했으면 이 편의점의 나머지 조회는 해 봐야 소용없으니 건너뛴다
+        reason[chain.id][keyword] = reasonText(error);
+        failed[chain.id] += mine.length;
+        done += mine.length;
+      } else {
+        done++;
+        rest.push(...mine.slice(1));
       }
     }
-  }
 
-  // 검색어 후보: 적은 그대로, 그리고 띄어쓰기를 없앤 것.
-  // (이마트24는 "포켓몬 카드"로는 상품을 못 찾고 "포켓몬카드"로는 찾는다)
-  const words = [...new Set([keyword, keyword.replace(/\s+/g, '')])];
-  if (words.length === 1) words.push(keyword); // 후보가 하나뿐이면 같은 검색어로 한 번 더 시도한다
+    // 2단계
+    const again = [];
+    await pool(rest, async task => {
+      try { await ask(task, matched[task.chain][keyword].word); done++; } catch (e) { again.push(task); }
+      showProgress(done, total, `${head}${task.region.name} ${chainName(task.chain)} 조회 중`);
+    });
 
-  // 1단계
-  const rest = [];
-  for (const chain of chains.filter(c => !c.note)) {
-    const mine = tasks.filter(t => t.chain === chain.id);
-    if (mine.length === 0) continue;
-    showProgress(done, total, `${chain.name} 상품 확인 중`);
-    let error = null;
-    for (const word of words) {
-      try { await ask(mine[0], word); error = null; break; } catch (e) { error = e; }
-    }
-    if (error) {
-      // 상품을 정하지 못했으면 이 편의점의 나머지 조회는 해 봐야 소용없으니 건너뛴다
-      reason[chain.id] = reasonText(error);
-      failed[chain.id] = mine.length;
-      done += mine.length;
-    } else {
+    // 3단계
+    await pool(again, async task => {
+      try { await ask(task, matched[task.chain][keyword].word); } catch (e) { failed[task.chain]++; }
       done++;
-      rest.push(...mine.slice(1));
-    }
+      showProgress(done, total, `${head}${task.region.name} ${chainName(task.chain)} 다시 조회 중`);
+    });
   }
-
-  // 2단계
-  const again = [];
-  await pool(rest, async task => {
-    try { await ask(task, matched[task.chain].word); done++; } catch (e) { again.push(task); }
-    showProgress(done, total, `${task.region.name} ${chainName(task.chain)} 조회 중`);
-  });
-
-  // 3단계
-  await pool(again, async task => {
-    try { await ask(task, matched[task.chain].word); } catch (e) { failed[task.chain]++; }
-    done++;
-    showProgress(done, total, `${task.region.name} ${chainName(task.chain)} 다시 조회 중`);
-  });
   showProgress(total, total, '완료');
 
   // 응답에 한 번도 나오지 않은 점포는 값이 비어 있다 → 확인불가(null)로 채운다
   const stores = [...targets.values()];
-  for (const s of stores) if (!('qty' in s.stock)) s.stock.qty = null;
+  for (const s of stores) for (const keyword of keywords) if (!(keyword in s.stock)) s.stock[keyword] = null;
 
-  return { stores, failed, calls, chains, matched, reason, keyword };
+  return { stores, failed, calls, chains, matched, reason, keywords };
 }
 
 // 조회 중에는 버튼을 잠그고 진행 막대를 보여 준다
@@ -345,8 +358,8 @@ function setBusy(busy) {
   if (busy) $('bar').value = 0;
 }
 
-// 편의점 재고 조회를 실행하고 결과를 그린다
-async function runStores(keyword) {
+// 편의점 재고 조회를 실행하고 결과를 그린다. keywords = 조회할 검색어 목록
+async function runStores(keywords) {
   const regions = checkedRegions();
   const chains = checkedChains();
   if (chains.length === 0 || regions.length === 0) { $('status').textContent = '조회할 편의점과 권역을 하나 이상 체크하세요.'; return; }
@@ -354,33 +367,47 @@ async function runStores(keyword) {
   // 조회와 동시에 내 위치를 묻는다. 기다리지 않고, 위치를 알게 되면 그때 목록을 가까운 순으로 다시 그린다.
   locate().then(pos => { me = pos; if (result && !$('load-btn').disabled && !$('result').hidden) renderList(); });
   setBusy(true);
-  result = await queryLive(regions, chains, keyword);
+  result = await queryLive(regions, chains, keywords);
   setBusy(false);
 
-  const reasons = Object.values(result.reason);
-  const asked = chains.filter(c => !c.note).length;
+  // 모든 편의점·검색어가 실패했을 때만 사이드바에 안내를 띄운다
+  const asked = chains.filter(c => !c.note).length * keywords.length;
+  const reasons = chains.flatMap(c => Object.values(result.reason[c.id]));
   $('status').textContent = asked > 0 && reasons.length === asked
     ? (reasons.every(r => r === '검색된 상품 없음') ? '검색된 상품이 없습니다. 검색어를 바꿔 보세요.' : '재고를 조회하지 못했습니다. 요약 카드의 이유를 확인하세요.')
     : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16); // sv-SE 형식 = "2026-10-11 20:24"
   chainFilter = null;
-  $('scope').textContent = `검색어: ${keyword} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`;
-  $('empty').hidden = true;
-  $('places').hidden = true;
-  $('result').hidden = false;
+  $('scope').textContent = `조회 상품: ${keywords.join(', ')} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`;
+  showMain('result');
   renderSummary();
   renderList();
+}
+
+// 메인 영역에는 결과 한 가지만 보인다: 'empty'(안내) / 'result'(편의점) / 'places'(네이버 지도) / 'cards'(힛카드)
+function showMain(which) {
+  for (const id of ['empty', 'result', 'places', 'cards']) $(id).hidden = id !== which;
 }
 
 // [재고 조회] 버튼: 네이버 지도가 체크돼 있으면 주변 판매처 찾기, 아니면 편의점 재고 조회
 $('load-btn').addEventListener('click', async () => {
   if (!catalog) return;
   const keyword = $('keyword').value.trim(); // trim: 앞뒤 공백 제거
-  if (keyword) localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
-  // 네이버 지도: 입력칸이 비어 있으면 기본 검색어(포켓몬카드)로 찾는다
-  if ($('naver-mode').checked) { await runPlaces(keyword || DEFAULT_PLACE_WORD); return; }
-  if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
-  await runStores(keyword);
+  const picking = $('pick-mode').checked;    // "선택하기"로 팩을 고르는 중인가
+  if (keyword && !picking) localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
+
+  // 네이버 지도: 팩을 고르는 중이거나 입력칸이 비어 있으면 기본 검색어(포켓몬카드)로 찾는다
+  if ($('naver-mode').checked) { await runPlaces(picking || !keyword ? DEFAULT_PLACE_WORD : keyword); return; }
+
+  // 편의점: "선택하기"면 고른 팩 이름들이, 아니면 입력칸의 글자가 검색어다
+  if (picking) {
+    const packs = checkedPacks();
+    if (packs.length === 0) { $('status').textContent = '조회할 팩을 하나 이상 선택하세요.'; return; }
+    await runStores(packs.map(p => p.name));
+  } else {
+    if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
+    await runStores([keyword]);
+  }
 });
 
 // ---------- 5-2. 네이버 지도: 내 위치 10km 안의 판매처 찾기 ----------
@@ -460,9 +487,7 @@ async function runPlaces(keyword) {
   $('status').textContent = areas.length === 0 ? '내 위치 10km 안에 저장된 점포가 없어 주변 지역 이름을 알 수 없습니다. 서울 서초·강남·송파·중구, 수원, 분당 근처에서만 쓸 수 있습니다.'
     : failedCalls === searches.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16);
-  $('empty').hidden = true;
-  $('result').hidden = true;
-  $('places').hidden = false;
+  showMain('places');
   renderPlaces(list, words, areas);
 }
 
@@ -532,7 +557,8 @@ $('naver-mode').addEventListener('change', applyMode);
 
 // [초기화] 버튼: 모든 선택을 풀고, 검색어는 기본값으로, 결과 화면은 처음 상태로 되돌린다
 $('reset-btn').addEventListener('click', () => {
-  for (const input of document.querySelectorAll('#naver-mode, #chains input, #regions input')) input.checked = false;
+  for (const input of document.querySelectorAll('#naver-mode, #pick-mode, #packs input, #chains input, #regions input')) input.checked = false;
+  localStorage.removeItem('pokemon-stock-packs');
   $('keyword').value = '포켓몬 카드';
   $('store-search').value = '';
   localStorage.removeItem('pokemon-stock-keyword');
@@ -540,10 +566,119 @@ $('reset-btn').addEventListener('click', () => {
   chainFilter = null;
   $('status').textContent = '';
   $('fetched-at').textContent = '';
-  $('result').hidden = true;
-  $('places').hidden = true;
-  $('empty').hidden = false;
+  showMain('empty');
+  applyPick();
   applyMode();
+});
+
+// ---------- 5-5. 팩 선택하기와 힛카드 ----------
+let cardData = null; // cards.json 내용: 팩 목록과 팩별 높은 등급 카드
+
+// "선택하기"에서 체크한 팩들
+const checkedPacks = () => cardData ? cardData.packs.filter(p => $('p-' + p.id).checked) : [];
+
+// "선택하기"를 체크하면 입력칸은 잠기고, 아래에 팩 목록이 나온다(여러 개를 고를 수 있다)
+function applyPick() {
+  const on = $('pick-mode').checked;
+  localStorage.setItem('pokemon-stock-pick', on ? '1' : '');
+  $('packs').hidden = !on;
+  $('keyword').disabled = on;
+  if (catalog) updateEstimate();
+}
+$('pick-mode').addEventListener('change', applyPick);
+
+// 팩 목록(체크박스)을 만든다
+function renderPacks() {
+  const saved = JSON.parse(localStorage.getItem('pokemon-stock-packs') || '[]'); // 지난번에 고른 팩
+  for (const p of cardData.packs) {
+    const label = el('label');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.id = 'p-' + p.id;
+    input.checked = saved.includes(p.id);
+    const hits = p.cards.filter(c => c.hit).length;
+    label.append(input, el('span', p.name), el('small', hits ? `힛카드 ${hits}장` : '등급 자료 없음'));
+    $('packs').append(label);
+  }
+  $('packs').addEventListener('change', () => {
+    localStorage.setItem('pokemon-stock-packs', JSON.stringify(checkedPacks().map(p => p.id)));
+    if (catalog) updateEstimate();
+  });
+}
+
+// 카드 이름: 한국어로 바꾸지 못한 포켓몬 카드는 일본어 이름 뒤에 어떤 포켓몬인지 붙여 준다
+const cardTitle = c => c.name === c.jpName && c.species ? `${c.jpName} (${c.species})` : c.name;
+
+// 카드 한 장을 목록의 한 칸으로: "이름 / 111/080 · SAR"
+function cardChip(c) {
+  const li = el('li');
+  li.append(el('strong', cardTitle(c)), el('span', `${c.no} · ${c.rarity}`));
+  li.title = `${c.rarityName} · 일본어판 이름: ${c.jpName}`; // 마우스를 올리면 나오는 설명
+  return li;
+}
+
+// 팩 하나의 화면: 팩 → [팩 열기] → 힛카드가 부채꼴로 펼쳐짐 → [다시 보기], 그 아래에 카드 목록
+function packPanel(pack) {
+  const hits = pack.cards.filter(c => c.hit);
+  const others = pack.cards.filter(c => !c.hit);
+  const box = el('article', '', 'pack');
+  box.append(el('h3', pack.name));
+  box.append(el('p', `일본어판 이름 ${pack.jpName} · ${pack.releaseDate} 발매 · 정규 카드 ${pack.official}장 · 힛카드 ${hits.length}장`, 'pack-meta'));
+
+  if (hits.length === 0) {
+    // 공개 자료에 등급이 없는 팩: 힛카드를 가려낼 수 없으니 시크릿 카드를 번호순으로 모두 보여 준다
+    box.append(el('p', `이 팩은 공개 자료에 등급 정보가 없어 힛카드를 가려내지 못했습니다. 시크릿 카드 ${others.length}장을 번호순으로 보여 줍니다(힛카드는 보통 번호가 큰 쪽에 있습니다).`, 'pack-meta'));
+    const list = el('ul', '', 'chips wrap');
+    list.append(...others.map(cardChip));
+    box.append(list);
+    return box;
+  }
+
+  const stage = el('div', '', 'stage');
+  const cover = el('button', '', 'pack-cover'); // 닫혀 있는 팩
+  cover.type = 'button';
+  cover.append(el('span', '포켓몬 카드 게임'), el('strong', pack.name), el('span', '팩 열기', 'open'));
+  const fan = el('div', '', 'fan');             // 펼쳐진 카드들
+  fan.hidden = true;
+  fan.style.setProperty('--n', hits.length);    // CSS 가 카드 수(--n)와 순서(--i)로 기울기를 계산한다
+  hits.forEach((c, i) => {
+    const card = el('div', '', 'tcg r-' + c.rarity.replace(/[^A-Za-z]/g, ''));
+    card.style.setProperty('--i', i);
+    card.append(el('span', c.rarity, 'rarity'), el('strong', cardTitle(c)), el('span', c.no, 'no'));
+    fan.append(card);
+  });
+  const again = el('button', '다시 보기', 'again');
+  again.type = 'button';
+  again.hidden = true;
+  cover.addEventListener('click', () => { cover.hidden = true; fan.hidden = false; again.hidden = false; again.focus(); });
+  again.addEventListener('click', () => { fan.hidden = true; again.hidden = true; cover.hidden = false; cover.focus(); });
+  stage.append(cover, fan);
+  box.append(stage, again);
+
+  const chips = el('ul', '', 'chips');
+  chips.append(...hits.map(cardChip));
+  box.append(chips);
+  if (others.length) {
+    // details/summary = 누르면 펼쳐지는 접이식 영역(HTML 기본 기능)
+    const more = el('details');
+    const list = el('ul', '', 'chips wrap');
+    list.append(...others.map(cardChip));
+    more.append(el('summary', `그 밖의 높은 등급 카드 ${others.length}장 (AR·SR 등)`), list);
+    box.append(more);
+  }
+  return box;
+}
+
+// [카드 조회] 버튼: "선택하기"에서 고른 팩의 힛카드를 보여 준다
+$('cards-btn').addEventListener('click', () => {
+  if (!cardData) { $('status').textContent = '카드 목록(cards.json)을 불러오지 못했습니다.'; return; }
+  const packs = $('pick-mode').checked ? checkedPacks() : [];
+  if (packs.length === 0) { $('status').textContent = '"선택하기"를 체크하고 팩을 하나 이상 고른 뒤 [카드 조회]를 누르세요.'; return; }
+  $('status').textContent = '';
+  $('cards-title').textContent = `힛카드 · ${packs.map(p => p.name).join(', ')}`;
+  $('cards-list').replaceChildren(...packs.map(packPanel));
+  showMain('cards');
+  $('cards').scrollIntoView({ behavior: 'smooth', block: 'start' }); // 휴대폰에서는 결과가 아래에 있어서 그쪽으로 내려 준다
 });
 
 // ---------- 5-4. 편의점 연결 상태 ----------
@@ -601,13 +736,18 @@ function renderSummary() {
       // 재고를 조회하지 않는 편의점: 점포 수와 이유만 보여 준다
       card.append(el('small', chain.note));
     } else {
-      // 이 편의점에서 검색어로 골라진 상품. 원하는 상품이 아니면 검색어를 더 구체적으로 적으면 된다.
-      const m = result.matched[chain.id];
-      const why = result.reason[chain.id]; // 이 편의점 전체를 조회하지 못한 이유(없으면 정상)
-      card.append(el('small', m ? `상품: ${m.name}` : why === '검색된 상품 없음' ? '검색된 상품이 없습니다' : `조회 불가: ${why || '조회할 지점 없음'}`, 'product'));
+      // 검색어마다, 이 편의점에서 골라진 상품(또는 조회하지 못한 이유)을 한 줄씩 보여 준다.
+      // 원하는 상품이 아니면 검색어를 더 구체적으로 적으면 된다.
+      for (const keyword of result.keywords) {
+        const m = result.matched[chain.id][keyword];
+        const why = result.reason[chain.id][keyword];
+        const head = result.keywords.length > 1 ? `${keyword} → ` : '상품: ';
+        card.append(el('small', head + (m ? m.name : why === '검색된 상품 없음' ? '검색된 상품이 없습니다' : `조회 불가 (${why || '조회할 지점 없음'})`), 'product'));
+      }
       card.append(el('span', `재고 있음 ${sum.inStock}곳`, sum.inStock > 0 ? 'count in' : 'count'));
       card.append(el('small', `품절 ${sum.soldOut}곳 · 확인불가 ${sum.unknown}곳`));
-      if (result.failed[chain.id] && !why) card.append(el('small', `조회 ${result.calls[chain.id]}회 중 ${result.failed[chain.id]}회 실패`));
+      const skipped = Object.keys(result.reason[chain.id]).length; // 통째로 건너뛴 검색어 수
+      if (result.failed[chain.id] && skipped === 0) card.append(el('small', `조회 ${result.calls[chain.id]}회 중 ${result.failed[chain.id]}회 실패`));
     }
     // 카드를 누르면 아래 목록을 그 편의점만으로 좁힌다. 다시 누르면 전체로 돌아간다.
     card.addEventListener('click', () => {
@@ -662,12 +802,14 @@ function storeItem(store, i) {
   // 권역 이름, 그리고 내 위치를 알면 거리도 함께
   const region = catalog.regions.find(r => r.id === store.region).name;
   btn.append(el('span', me ? `${region} · ${distanceLabel(distanceM(me, [store.lat, store.lng]))}` : region, 'where'));
-  // 재고 칩: "상품명: 재고 3". 상품명은 이 편의점에서 검색어로 골라진 상품이다
+  // 재고 칩: 검색어마다 "상품명: 재고 3". 상품명은 이 편의점에서 그 검색어로 골라진 상품이다
   const stocks = el('span', '', 'stocks');
-  const n = store.stock.qty;
-  const kind = n > 0 ? 'in' : n === 0 ? 'out' : 'unknown';
-  const m = result.matched[store.chain]; // 조회하지 못한 편의점은 골라진 상품이 없다
-  stocks.append(el('span', `${m ? m.name : '재고'}: ${stockLabel(n)}`, 'stock ' + kind));
+  for (const keyword of result.keywords) {
+    const n = store.stock[keyword];
+    const kind = n > 0 ? 'in' : n === 0 ? 'out' : 'unknown';
+    const m = result.matched[store.chain][keyword]; // 조회하지 못한 편의점은 골라진 상품이 없다
+    stocks.append(el('span', `${m ? m.name : keyword}: ${stockLabel(n)}`, 'stock ' + kind));
+  }
   btn.append(stocks);
 
   btn.addEventListener('click', () => {
@@ -709,6 +851,18 @@ $('store-search').addEventListener('input', () => { if (result) renderList(); })
 // 입력칸: 지난번 검색어를 되살리고, Enter 를 누르면 [재고 조회] 버튼을 누른 것과 같게 한다
 $('keyword').value = localStorage.getItem('pokemon-stock-keyword') || $('keyword').value;
 $('keyword').addEventListener('keydown', e => { if (e.key === 'Enter') $('load-btn').click(); });
+
+// 카드 목록을 읽어 "선택하기"의 팩 목록을 만든다
+fetch('cards.json')
+  .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+  .then(json => {
+    cardData = json;
+    renderPacks();
+    $('pick-mode').checked = !!localStorage.getItem('pokemon-stock-pick');
+    applyPick();
+    $('cards-source').textContent = `카드 자료: ${cardData.source} · ${cardData.builtAt.slice(0, 10)} 저장.`;
+  })
+  .catch(() => { $('pick-mode').disabled = true; }); // 카드 목록이 없으면 "선택하기"를 쓸 수 없게 한다
 
 // 저장된 점포 목록을 읽어 편의점·권역 체크박스를 만든다
 fetch('stores.json')

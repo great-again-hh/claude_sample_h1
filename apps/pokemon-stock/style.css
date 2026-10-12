@@ -117,6 +117,72 @@ fieldset:has(input:disabled) { background: transparent; }
 #fetched-at { display: inline-block; margin: 12px 0 0; padding: 2px 8px; background: var(--ink); color: var(--card); font-weight: 700; font-size: 12px; }
 .notice { margin: 16px 0 0; font-size: 12px; }
 
+/* "조회할 상품" 이름표와 [선택하기]를 한 줄의 양 끝에 */
+.field-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.field-row label.field { margin: 0; }
+header label.pick { padding: 0; font-size: 12px; font-weight: 700; }
+#keyword:disabled { opacity: 0.4; cursor: not-allowed; }
+/* 팩 목록: 길어지면 이 상자 안에서 스크롤 */
+#packs { max-height: 190px; overflow-y: auto; margin: -4px 0 10px; }
+#packs[hidden] { display: none; }
+
+/* 카드 조회 버튼 (권역 맨 아래) */
+#cards-btn { width: 100%; margin-top: 12px; text-align: center; font-weight: 800; background: var(--ok); }
+
+/* ---------- 힛카드 화면 ---------- */
+#cards-note { margin: 0 0 14px; color: var(--dim); font-size: 12px; }
+.pack { margin-bottom: 28px; padding: 14px 16px 16px; border: var(--line); border-radius: 8px; background: var(--card); box-shadow: var(--shadow); }
+.pack h3 { margin: 0; font-size: 1.15rem; font-weight: 800; }
+.pack-meta { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
+
+/* 무대: 닫힌 팩 또는 펼쳐진 카드가 가운데에 놓인다 */
+.stage { display: flex; justify-content: center; align-items: center; min-height: 270px; padding: 16px 0 96px; overflow: hidden; } /* 아래 여백: 기울어진 카드의 끝이 잘리지 않게 */
+
+/* 닫힌 팩: 세로로 긴 봉지 모양 버튼 */
+.pack-cover { display: flex; flex-direction: column; justify-content: space-between; align-items: center; width: 130px; height: 210px; padding: 14px 10px; text-align: center; background: var(--point); border-radius: 10px; font-size: 12px; }
+.pack-cover[hidden], .fan[hidden], .again[hidden] { display: none; }
+.pack-cover strong { font-size: 1.05rem; font-weight: 800; line-height: 1.25; }
+.pack-cover .open { padding: 2px 10px; background: var(--ink); color: var(--card); font-weight: 800; }
+
+/* 펼쳐진 카드: 가운데를 기준으로 부채꼴. --i = 몇 번째 카드, --n = 카드 수, --w = 카드 폭 */
+.fan { --w: 104px; display: flex; justify-content: center; flex: 1; min-width: 0; padding: 20px 34px 0; box-sizing: border-box; }
+.tcg {
+  /* 가운데에서 멀수록 더 기울인다. 카드가 많으면 한 장당 기울기를 줄여 전체 각도가 너무 커지지 않게 한다 */
+  --turn: calc((var(--i) - (var(--n) - 1) / 2) * min(5deg, 44deg / var(--n)));
+  display: flex; flex-direction: column; justify-content: space-between;
+  flex: 0 0 var(--w); height: calc(var(--w) * 1.44); padding: 8px; box-sizing: border-box;
+  border: var(--line); border-radius: 8px; background: var(--card); box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(var(--turn)) translateY(calc(var(--turn) / 1deg * var(--turn) / 1deg * 0.18px)); /* 끝으로 갈수록 살짝 내려 부채꼴로 */
+  transform-origin: 50% 120%;
+  animation: deal 0.45s backwards; animation-delay: calc(var(--i) * 70ms); /* 한 장씩 차례로 나타난다 */
+  font-size: 12px;
+}
+/* 둘째 카드부터는 앞 카드와 겹친다. 카드가 많을수록 더 많이 겹쳐서 전체가 화면 폭 안에 들어오게 한다
+   (여기서 100% 는 .fan 의 폭) */
+.tcg + .tcg { margin-left: calc(min(var(--w) - 28px, (100% - var(--w)) / (var(--n) - 1)) - var(--w)); }
+@keyframes deal { from { opacity: 0; transform: translateY(40px) rotate(0); } }
+.tcg:hover { z-index: 1; transform: rotate(0) translateY(-10px) scale(1.06); }  /* 마우스를 올린 카드는 똑바로 세워 앞으로 */
+.tcg strong { font-size: 13px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.tcg .rarity { align-self: flex-start; padding: 0 6px; border: 1px solid var(--ink); background: var(--card); font-weight: 800; }
+.tcg .no { color: var(--dim); }
+/* 등급별 카드 색: 색만으로 구분하지 않고 등급 글자를 함께 적는다 */
+.r-SAR { background: var(--point); }
+.r-UR, .r-MUR { background: #ffb3b3; }
+.r-BWR { background: #e6e6e6; }
+.r-SSR { background: var(--sub); }
+
+.again { display: block; margin: 0 auto 12px; min-height: 30px; padding: 2px 16px; font-weight: 700; border-radius: 999px; box-shadow: 2px 2px 0 var(--ink); }
+
+/* 카드 목록: 가로로 넘기는 칸들. wrap 이 붙으면 여러 줄로 */
+.chips { display: flex; gap: 8px; margin: 0; padding: 4px 2px 10px; list-style: none; overflow-x: auto; }
+.chips.wrap { flex-wrap: wrap; overflow-x: visible; }
+.chips li { flex: 0 0 auto; min-width: 120px; padding: 6px 10px; border: 1px solid var(--ink); border-radius: 6px; background: var(--bg); }
+.chips strong { display: block; font-size: 13px; font-weight: 800; }
+.chips span { color: var(--dim); font-size: 12px; }
+.pack summary { margin-top: 6px; cursor: pointer; font-weight: 700; font-size: 12px; }
+/* 움직임을 줄이도록 설정한 사람에게는 등장 효과를 끈다 */
+@media (prefers-reduced-motion: reduce) { .tcg { animation: none; } }
+
 /* 편의점 연결 상태 박스 4개 */
 #health-wrap { margin-bottom: 24px; }
 #health { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
@@ -202,5 +268,6 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   header label { padding: 10px 0; }
   .map a { padding: 12px 0; }
   #summary, #health { grid-template-columns: 1fr 1fr; }
+  .fan { --w: 84px; padding: 16px 26px 0; }
   .store { grid-template-columns: 1fr; }
 }
