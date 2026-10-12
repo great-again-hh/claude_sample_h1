@@ -127,19 +127,35 @@ function buildTasks(regions, chains) {
 
 // ---------- 4. 편의점·권역 체크박스 ----------
 
-// 편의점 체크박스: 여러 개를 고를 수 있다. 처음에는 모두 체크돼 있다.
+// 편의점 연결 상태(checkHealth 가 채운다): health[편의점] = true(정상) / false(오류). 아직 확인 전이면 값이 없다
+const health = {};
+const chainTouched = new Set(); // 사용자가 직접 체크를 바꾼 편의점. 이 편의점은 연결 상태로 덮어쓰지 않는다
+
+// 연결 상태가 확인되면 그 편의점의 체크박스 처음 값을 맞춘다: 정상이면 체크, 오류면 해제.
+// 처음 값만 정해 주는 것이라, 사용자가 이미 손댄 편의점은 건드리지 않는다.
+function applyHealth(id) {
+  const input = $('c-' + id);
+  if (!input || chainTouched.has(id) || !(id in health)) return;
+  input.checked = health[id];
+  if (catalog) updateEstimate();
+}
+
+// 편의점 체크박스: 여러 개를 고를 수 있다. 처음 값은 연결 상태를 따르고, 그 뒤에는 자유롭게 바꿀 수 있다.
 function renderChains() {
-  const saved = JSON.parse(localStorage.getItem('pokemon-stock-chains') || 'null'); // 지난번에 체크한 편의점
   for (const c of CHAINS) {
     const label = el('label');
     const input = el('input');
     input.type = 'checkbox';
     input.id = 'c-' + c.id;
-    input.checked = saved ? saved.includes(c.id) : true;
+    input.checked = health[c.id] === true; // 연결 상태를 이미 알면 그 값으로, 아직 모르면 일단 해제(확인되면 applyHealth 가 맞춘다)
     label.append(input, el('span', c.name), el('small', `점포 ${catalog.regions.reduce((sum, r) => sum + r.count[c.id], 0)}곳`));
     $('chains').append(label);
   }
-  $('chains').addEventListener('change', updateEstimate);
+  $('chains').append(el('small', '처음에는 연결이 정상인 편의점만 체크됩니다. 직접 바꿔도 됩니다.', 'hint'));
+  $('chains').addEventListener('change', e => {
+    chainTouched.add(e.target.id.slice(2)); // "c-cu" → "cu". 사용자가 바꾼 편의점으로 기억한다
+    updateEstimate();
+  });
 }
 
 function renderRegions() {
@@ -182,7 +198,6 @@ function updateEstimate() {
   const regions = checkedRegions();
   const chains = checkedChains();
   localStorage.setItem('pokemon-stock-regions', JSON.stringify(regions.map(r => r.id)));
-  localStorage.setItem('pokemon-stock-chains', JSON.stringify(chains.map(c => c.id)));
   // 권역 옆의 점포 수: 체크한 편의점의 점포만 더한다
   const storesIn = r => chains.reduce((sum, c) => sum + r.count[c.id], 0);
   for (const r of catalog.regions) $('n-' + r.id).textContent = `점포 ${storesIn(r)}곳`;
@@ -394,7 +409,7 @@ async function runStores(keywords, batch = null) {
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16); // sv-SE 형식 = "2026-10-11 20:24"
   chainFilter = null;
   $('scope').textContent = (result.stopped ? '중간에 멈춘 결과입니다. ' : '')
-    + (batch ? `일괄 조회: 팩 ${keywords.length}개 · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: 전체 ${regions.length}곳`
+    + (batch ? `일괄 조회: 팩 ${keywords.length}개 · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`
       : `조회 상품: ${keywords.join(', ')} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`);
   showMain('result');
   renderSummary();
@@ -427,20 +442,21 @@ $('load-btn').addEventListener('click', async () => {
   }
 });
 
-// [일괄 조회] 버튼: 팩 목록 전체를 하나씩, 모든 권역에서 조회해 재고가 있는 점포를 편의점별로 한 번에 보여 준다.
+// [일괄 조회] 버튼: 팩 목록 전체를 하나씩, 체크한 권역에서 조회해 재고가 있는 점포를 편의점별로 한 번에 보여 준다.
 // 조회 중에는 이 버튼이 [중지]로 바뀐다.
 $('batch-btn').addEventListener('click', async () => {
   const btn = $('batch-btn');
   if ($('load-btn').disabled) { stopRequested = true; btn.textContent = '멈추는 중'; return; } // 조회 중에 누르면 멈춘다
   if (!catalog || !cardData) { $('status').textContent = '점포 목록과 카드 목록을 아직 불러오지 못했습니다.'; return; }
 
-  const chains = checkedChains().length ? checkedChains() : CHAINS; // 체크한 편의점(없으면 전부)
-  const regions = catalog.regions;                                   // 권역은 전부
-  const keywords = cardData.packs.map(p => p.name);                  // 팩 목록 전체
+  const chains = checkedChains();                    // 체크한 편의점
+  const regions = checkedRegions();                  // 체크한 권역
+  const keywords = cardData.packs.map(p => p.name);  // 팩 목록 전체
+  if (chains.length === 0 || regions.length === 0) { $('status').textContent = '일괄 조회할 편의점과 권역을 하나 이상 체크하세요.'; return; }
   const calls = buildTasks(regions, chains).length * keywords.length;
   const minutes = Math.ceil(calls * 1.4 / PARALLEL / 60);
   // confirm = "확인/취소"를 묻는 창. 조회량이 많아서 시작 전에 한 번 물어본다
-  if (!confirm(`일괄 조회는 팩 ${keywords.length}개를 모든 권역(${regions.length}곳)에서 조회합니다.\n`
+  if (!confirm(`일괄 조회는 팩 ${keywords.length}개를 체크한 권역 ${regions.length}곳(${regions.map(r => r.name).join(', ')})에서 조회합니다.\n`
     + `최대 ${calls.toLocaleString()}회 조회하고 ${minutes}분쯤 걸릴 수 있습니다.\n`
     + (calls > 3000 ? '공개 서버의 하루 한도(약 3,000회)를 넘습니다. "조회할 편의점" 체크를 줄이는 것이 좋습니다.\n' : '공개 서버는 하루에 약 3,000회까지만 조회를 받으니 하루 한 번 정도만 쓸 수 있습니다.\n')
     + '조회되지 않는 편의점은 바로 건너뛰므로 실제 횟수는 더 적을 수 있습니다.\n\n계속할까요? (조회 중에 [중지]를 누르면 멈춥니다)')) return;
@@ -599,6 +615,7 @@ $('naver-mode').addEventListener('change', applyMode);
 $('reset-btn').addEventListener('click', () => {
   for (const input of document.querySelectorAll('#naver-mode, #pick-mode, #packs input, #chains input, #regions input')) input.checked = false;
   localStorage.removeItem('pokemon-stock-packs');
+  for (const c of CHAINS) chainTouched.add(c.id); // 초기화한 뒤에는 연결 상태가 체크를 되돌리지 않게 한다
   $('keyword').value = '포켓몬 카드';
   $('store-search').value = '';
   localStorage.removeItem('pokemon-stock-keyword');
@@ -808,11 +825,15 @@ function checkHealth() {
         state.textContent = '정상';
         state.className = 'state ok';
         detail.textContent = '재고 조회 가능';
+        health[chain.id] = true;
+        applyHealth(chain.id);
       })
       .catch(e => {
         state.textContent = '오류';
         state.className = 'state bad';
         detail.textContent = reasonText(e);
+        health[chain.id] = false;
+        applyHealth(chain.id);
       });
   }
   $('health-note').textContent = `${new Date().toLocaleString('sv-SE').slice(0, 16)}에 편의점마다 한 번씩 시험 조회한 결과입니다. 새로고침하면 다시 확인합니다.`;

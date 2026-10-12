@@ -291,6 +291,7 @@ legend .all { min-height: 22px; margin-left: 6px; padding: 0 8px; font-size: 12p
 /* 체크박스 | 이름 | 점포 수(오른쪽 끝) 를 한 줄에 */
 header label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
 header label small { margin-left: auto; color: var(--dim); font-size: 11px; }
+.checks .hint { display: block; margin-top: 4px; color: var(--dim); font-size: 11px; } /* 체크박스 아래의 짧은 안내 */
 header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); } /* accent-color = 체크 표시의 색 */
 #estimate { margin: 8px 0 0; font-weight: 700; font-size: 12px; }
 
