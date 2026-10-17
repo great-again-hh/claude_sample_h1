@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '20';
+const VERSION = '21';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -75,7 +75,7 @@ const chainName = id => CHAINS.find(c => c.id === id).name;
 // ---------- 3. 화면 상태와 도우미 ----------
 
 let catalog = null;     // stores.json 내용: 권역 목록(regions)과 점포 목록(stores)
-let result = null;      // 마지막 편의점 조회 결과: { stores, failed, calls, chains, matched, reason, keyword }
+let result = null;      // 편의점 조회 결과(조회 중에도 채워지는 중): { stores, failed, calls, chains, matched, reason, keywords, batch, live, started, current }
 let chainFilter = null; // 요약 카드를 눌러 고른 편의점 id (없으면 전체)
 let stopRequested = false; // 조회 중에 [중지]를 눌렀는가. true 면 남은 조회를 건너뛴다
 let me = null;          // 내 위치 [위도, 경도]. 이 브라우저 안에서 거리 계산에만 쓰고 어디에도 보내거나 저장하지 않는다
@@ -234,12 +234,23 @@ function reasonText(e) {
   const text = String((e && e.message) || e);
   if (e && e.name === 'TimeoutError') return '서버 응답이 10초 넘게 지연됨';
   if (/찾을 수 없|검색된 상품 없음/.test(text)) return '검색된 상품 없음';
+  if (text.startsWith('다른 상품만 검색됨')) return text;
   if (/인증/.test(text)) return '서버의 재고 서비스 인증 오류 (서버 운영자가 복구해야 함)';
   if (/RELAY|릴레이/.test(text)) return '서버와 편의점 사이의 연결 오류';
   if (/403|Forbidden/.test(text)) return '편의점 서버가 요청을 거부함';
   return '서버 오류';
 }
 console.assert(reasonText(new Error('상품 검색 결과에서 PLU 코드를 찾을 수 없습니다.')) === '검색된 상품 없음', 'reasonText');
+
+// 서버가 고른 상품이 검색어와 맞는가? 상품명에 검색어의 낱말(띄어쓰기와 "카드"를 뺀 것)이 모두 들어 있어야 한다.
+// 서버는 비슷한 상품을 아무거나 돌려주기도 한다(예: CU에서 "테라스탈 페스타 ex" → "HK)헛개수이엑스P500ml")
+function relevant(keyword, name) {
+  const flat = name.replace(/\s+/g, '').toLowerCase();
+  return keyword.toLowerCase().split(/\s+|카드/).filter(w => w).every(w => flat.includes(w));
+}
+console.assert(!relevant('테라스탈 페스타 ex', 'HK)헛개수이엑스P500ml'), 'relevant: 엉뚱한 상품');
+console.assert(relevant('포켓몬 카드', '포켓몬)어비스아이카드') && relevant('포켓몬카드', '포켓몬)니힐제로카드'), 'relevant: 포켓몬 카드');
+console.assert(relevant('MEGA 드림 ex', '포켓몬)MEGA드림ex카드') && relevant('로켓단의 영광', '포켓몬)로켓단의영광'), 'relevant: 팩 이름');
 
 // 일꾼 PARALLEL 명이 목록에서 하나씩 꺼내 처리한다 (한꺼번에 다 보내면 서버에 부담이 된다)
 async function pool(list, work) {
@@ -260,7 +271,8 @@ function showProgress(done, total, label) {
 //   1단계: 편의점마다 한 곳만 먼저 조회해 "어떤 상품이 골라지는지" 정한다. 못 정하면 그 편의점은 건너뛴다.
 //   2단계: 나머지 조회 지점을 차례로 조회한다.
 //   3단계: 실패한 조회만 한 번 더 시도한다.
-async function queryLive(regions, chains, keywords) {
+// 결과(result)는 처음부터 만들어 두고, 조회가 하나 끝날 때마다 paint()로 화면을 고친다(끝까지 기다리지 않아도 보이게).
+async function queryLive(regions, chains, keywords, batch) {
   // 대상 점포: 저장된 목록에서 체크한 권역·편의점의 점포만 고른다. 재고(stock)는 검색어별로 조회하며 채운다.
   const regionIds = regions.map(r => r.id);
   const chainIds = chains.map(c => c.id);
@@ -274,14 +286,21 @@ async function queryLive(regions, chains, keywords) {
   const reason = {};  // reason[편의점][검색어] = 그 검색어로 이 편의점을 조회하지 못한 이유
   for (const id of chainIds) { failed[id] = 0; calls[id] = tasks.filter(t => t.chain === id).length * keywords.length; matched[id] = {}; reason[id] = {}; }
   let done = 0;
+  const stores = [...targets.values()];
+  // live = 조회 중, started[편의점] = 그 편의점의 첫 결과가 나왔는가, current = 지금 조회 중인 검색어
+  result = { stores, failed, calls, chains, matched, reason, keywords, batch: !!batch, live: true, started: {}, current: keywords[0] };
+  paintedStock = -1;
+  paint(true);
 
   for (const keyword of keywords) {
     if (stopRequested) break; // 중지를 눌렀으면 남은 검색어는 조회하지 않는다
     const head = keywords.length > 1 ? `[${keyword}] ` : ''; // 검색어가 여럿이면 진행 글자 앞에 붙인다
+    result.current = keyword;
 
     // 같은 편의점의 조회가 모두 같은 상품을 보고 있는지 확인한다. 다른 상품이 골라졌으면 그 응답은 버린다.
     const lock = (chain, code, name, word) => {
       if (!code) throw new Error('검색된 상품 없음');
+      if (name && !relevant(keyword, name)) throw new Error(`다른 상품만 검색됨: ${name}`);
       if (!matched[chain][keyword]) matched[chain][keyword] = { code, name: name || word, word };
       if (matched[chain][keyword].code !== code) throw new Error('다른 상품이 선택됨');
     };
@@ -335,7 +354,7 @@ async function queryLive(regions, chains, keywords) {
     const rest = [];
     for (const chain of chains.filter(c => !c.note)) {
       const mine = tasks.filter(t => t.chain === chain.id);
-      if (mine.length === 0) continue;
+      if (mine.length === 0) { result.started[chain.id] = true; continue; }
       showProgress(done, total, `${head}${chain.name} 상품 확인 중`);
       let error = null;
       for (const word of words) {
@@ -350,6 +369,8 @@ async function queryLive(regions, chains, keywords) {
         done++;
         rest.push(...mine.slice(1));
       }
+      result.started[chain.id] = true; // 첫 결과(또는 건너뛴 이유)가 나왔다 → 애니메이션 대신 결과를 보여 준다
+      paint(true);
     }
 
     // 2단계
@@ -358,6 +379,7 @@ async function queryLive(regions, chains, keywords) {
       if (stopRequested) return;
       try { await ask(task, matched[task.chain][keyword].word); done++; } catch (e) { again.push(task); }
       showProgress(done, total, `${head}${task.region.name} ${chainName(task.chain)} 조회 중`);
+      paint();
     });
 
     // 3단계
@@ -366,16 +388,73 @@ async function queryLive(regions, chains, keywords) {
       try { await ask(task, matched[task.chain][keyword].word); } catch (e) { failed[task.chain]++; }
       done++;
       showProgress(done, total, `${head}${task.region.name} ${chainName(task.chain)} 다시 조회 중`);
+      paint();
     });
   }
   if (!stopRequested) showProgress(total, total, '완료');
 
   // 응답에 한 번도 나오지 않은 점포는 값이 비어 있다 → 확인불가(null)로 채운다
-  const stores = [...targets.values()];
   for (const s of stores) for (const keyword of keywords) if (!(keyword in s.stock)) s.stock[keyword] = null;
-
-  return { stores, failed, calls, chains, matched, reason, keywords };
+  result.live = false;
+  return result;
 }
+
+// 조회 중에 결과 화면을 고친다. 너무 자주 그리지 않도록 0.5초에 한 번만(force 면 바로)
+let paintedAt = 0;
+let paintedStock = -1; // 마지막으로 목록을 그렸을 때의 "재고 있는 점포 수"
+function paint(force = false) {
+  if (!force && Date.now() - paintedAt < 500) return;
+  paintedAt = Date.now();
+  const focused = [...$('summary').children].indexOf(document.activeElement); // 다시 그려도 키보드 포커스를 지킨다
+  renderSummary();
+  if (focused >= 0) $('summary').children[focused].focus();
+  // 목록은 재고 있는 점포가 늘었을 때만 다시 그린다(펼쳐 둔 지도가 자꾸 접히지 않게). 점포 검색 중이면 매번 그린다
+  const n = result.stores.filter(hasStock).length;
+  if (n !== paintedStock || $('store-search').value.trim()) { paintedStock = n; renderList(); }
+}
+
+// ---------- 조회를 기다리는 동안 힛카드 넘기기 ----------
+// 편의점마다 첫 결과가 오기 전에는, 그 편의점 요약 카드 안에서 조회 중인 팩의 힛카드가 한 장씩 넘어간다.
+const dealers = new Map(); // 편의점 id → { box, img, name, i }
+let dealTimer = null;
+const calm = matchMedia('(prefers-reduced-motion: reduce)'); // 기기의 "동작 줄이기" 설정
+
+// 넘길 카드: 조회 중인 팩의 힛카드(등급 자료가 없는 팩은 번호가 큰 8장) 중 그림이 있는 것.
+// 직접 적은 검색어처럼 팩이 아니거나 그림이 없으면 모든 팩의 힛카드를 넘긴다.
+function deckFor(keyword) {
+  if (!cardData) return [];
+  const pack = cardData.packs.find(p => p.name === keyword);
+  const hits = pack ? pack.cards.filter(c => c.hit) : [];
+  const mine = (hits.length ? hits : pack ? pack.cards.slice(-8) : []).filter(c => c.image);
+  return mine.length ? mine : cardData.packs.flatMap(p => p.cards.filter(c => c.hit && c.image));
+}
+
+// 편의점 하나의 카드 넘기는 자리. 다시 그려도 같은 자리를 쓰도록 만들어 둔 것을 돌려준다
+function dealer(chainId) {
+  if (!dealers.has(chainId)) {
+    const box = el('div', '', 'deal');
+    box.setAttribute('aria-hidden', 'true'); // 꾸밈이라 화면 읽기 프로그램은 건너뛴다
+    const d = { box, img: el('img'), name: el('small'), i: dealers.size * 3 }; // 편의점마다 다른 카드에서 시작한다
+    d.img.alt = '';
+    box.append(d.img, d.name);
+    dealers.set(chainId, d);
+    deal(d);
+  }
+  return dealers.get(chainId).box;
+}
+
+// 다음 카드로 넘긴다: 오른쪽에서 기울어진 채 날아 들어오는 움직임(동작 줄이기 설정이면 움직임 없이 바꾸기만)
+function deal(d) {
+  const deck = deckFor(result.current);
+  if (!deck.length) return;
+  const c = deck[d.i++ % deck.length];
+  d.img.src = c.image + '/low.webp';
+  d.name.textContent = `${cardTitle(c)} · ${c.rarity === '?' ? c.no : c.rarity}`;
+  if (!calm.matches) d.img.animate([{ transform: 'translateX(70%) rotate(14deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 380, easing: 'ease-out' });
+}
+// 첫 결과가 나온 편의점의 자리는 화면에서 빠졌으니 더 넘기지 않고 지운다
+function startDeal() { dealers.clear(); dealTimer = setInterval(() => dealers.forEach((d, id) => result.started[id] ? dealers.delete(id) : deal(d)), 1100); }
+function stopDeal() { clearInterval(dealTimer); dealers.clear(); }
 
 // 조회 중에는 버튼을 잠그고 진행 막대를 보여 준다
 function setBusy(busy) {
@@ -395,8 +474,15 @@ async function runStores(keywords, batch = null) {
   locate().then(pos => { me = pos; if (result && !$('load-btn').disabled && !$('result').hidden) renderList(); });
   stopRequested = false;
   setBusy(true);
-  result = await queryLive(regions, chains, keywords);
-  result.batch = !!batch;          // 일괄 조회 결과인가 (화면을 조금 다르게 그린다)
+  const scope = batch ? `일괄 조회: 팩 ${keywords.length}개 · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`
+    : `조회 상품: ${keywords.join(', ')} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`;
+  // 결과 화면을 바로 열고, 조회가 진행되는 대로 채운다
+  chainFilter = null;
+  $('scope').textContent = '조회 중입니다. 결과가 나오는 대로 아래에 채워집니다. ' + scope;
+  showMain('result');
+  startDeal();
+  await queryLive(regions, chains, keywords, batch); // result.batch = 일괄 조회 결과인가 (화면을 조금 다르게 그린다)
+  stopDeal();
   result.stopped = stopRequested;  // 중간에 멈췄는가
   setBusy(false);
 
@@ -404,14 +490,10 @@ async function runStores(keywords, batch = null) {
   const asked = chains.filter(c => !c.note).length * keywords.length;
   const reasons = chains.flatMap(c => Object.values(result.reason[c.id]));
   $('status').textContent = asked > 0 && reasons.length === asked
-    ? (reasons.every(r => r === '검색된 상품 없음') ? '검색된 상품이 없습니다. 검색어를 바꿔 보세요.' : '재고를 조회하지 못했습니다. 요약 카드의 이유를 확인하세요.')
+    ? (reasons.every(r => r === '검색된 상품 없음' || r.startsWith('다른 상품만')) ? '검색된 상품이 없습니다. 검색어를 바꿔 보세요.' : '재고를 조회하지 못했습니다. 요약 카드의 이유를 확인하세요.')
     : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16); // sv-SE 형식 = "2026-10-11 20:24"
-  chainFilter = null;
-  $('scope').textContent = (result.stopped ? '중간에 멈춘 결과입니다. ' : '')
-    + (batch ? `일괄 조회: 팩 ${keywords.length}개 · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`
-      : `조회 상품: ${keywords.join(', ')} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`);
-  showMain('result');
+  $('scope').textContent = (result.stopped ? '중간에 멈춘 결과입니다. ' : '') + scope;
   renderSummary();
   renderList();
 }
@@ -853,7 +935,10 @@ function renderSummary() {
     card.append(el('strong', chain.name));
     card.append(el('span', `대상 점포 ${sum.total}곳`, 'count'));
 
-    if (chain.note) {
+    if (result.live && !result.started[chain.id]) {
+      // 이 편의점의 첫 결과가 오기 전: 힛카드가 한 장씩 넘어간다
+      card.append(dealer(chain.id), el('small', '첫 결과를 기다리는 중…'));
+    } else if (chain.note) {
       // 재고를 조회하지 않는 편의점: 점포 수와 이유만 보여 준다
       card.append(el('small', chain.note));
     } else {
@@ -875,7 +960,8 @@ function renderSummary() {
         if (withStock.length) card.append(el('small', '재고 있는 팩: ' + withStock.map(([k, n]) => `${k} ${n}곳`).join(', '), 'product'));
       }
       card.append(el('span', `재고 있음 ${sum.inStock}곳`, sum.inStock > 0 ? 'count in' : 'count'));
-      card.append(el('small', `품절 ${sum.soldOut}곳 · 확인불가 ${sum.unknown}곳`));
+      // 조회 중에는 아직 조회하지 않은 점포도 "미확인"에 들어 있다
+      card.append(el('small', `품절 ${sum.soldOut}곳 · ${result.live ? '미확인' : '확인불가'} ${sum.unknown}곳` + (result.live ? ' · 조회 중…' : '')));
       const skipped = Object.keys(result.reason[chain.id]).length; // 통째로 건너뛴 검색어 수
       if (result.failed[chain.id] && skipped === 0 && !result.batch) card.append(el('small', `조회 ${result.calls[chain.id]}회 중 ${result.failed[chain.id]}회 실패`));
     }
@@ -904,7 +990,9 @@ function renderList() {
   const who = chainFilter ? chainName(chainFilter) + ' ' : '';
   $('panel-title').textContent = word ? `검색된 ${who}점포 ${shown.length}곳` : `재고 있는 ${who}점포 ${shown.length}곳`;
   const order = me ? '내 위치에서 가까운 순입니다.' : '재고가 많은 순입니다. 브라우저에서 위치 사용을 허용하면 가까운 순으로 바뀝니다.';
-  const none = word ? '조회한 편의점·권역의 점포 중에 검색어와 맞는 점포가 없습니다.' : '선택한 권역에 재고가 있는 점포가 없습니다. 검색창에서 점포를 찾아볼 수 있습니다.';
+  const none = word ? '조회한 편의점·권역의 점포 중에 검색어와 맞는 점포가 없습니다.'
+    : result.live ? '아직 재고가 있는 점포를 찾지 못했습니다. 찾는 대로 여기에 나옵니다.'
+    : '선택한 권역에 재고가 있는 점포가 없습니다. 검색창에서 점포를 찾아볼 수 있습니다.';
   $('panel-note').textContent = shown.length ? (word ? '재고가 없는 점포도 함께 보여 줍니다. ' : '') + order + ' 점포를 누르면 아래에 지도가 펼쳐집니다.' : none;
   // shortcut: 한 번에 300곳까지만 그린다(너무 많으면 화면이 느려진다), 더 필요하면 "더 보기" 버튼 추가
   const rows = shown.slice(0, 300);

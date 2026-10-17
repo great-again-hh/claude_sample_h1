@@ -271,6 +271,11 @@ button.pack-cover[aria-expanded], button.pack-cover:hover { background: var(--c,
 button[aria-expanded="true"], button[aria-pressed="true"] { background: var(--point); }
 
 .card .count { display: block; }
+
+/* 편의점의 첫 결과를 기다리는 동안 힛카드가 한 장씩 넘어가는 자리 (넘기는 움직임은 script.js 의 deal) */
+.deal { display: grid; justify-items: center; gap: 4px; margin: 8px 0 4px; overflow: hidden; }
+.deal img { width: 96px; aspect-ratio: 245 / 337; border: var(--line); border-radius: 6px; background: var(--bg); box-shadow: var(--shadow); }
+.deal small { text-align: center; color: var(--ink); font-weight: 700; min-height: 2.6em; }
 .card .count.in { display: inline-block; padding: 0 6px; background: var(--ok); border: 1px solid var(--ink); font-weight: 800; }
 
 #panel { margin-top: 28px; }
