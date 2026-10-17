@@ -193,7 +193,7 @@ button.pack-cover.has-img, button.pack-cover.has-img:hover { padding: 0; backgro
 .box-art.has-img > span, .box-art.has-img > strong { padding: 0 6px; background: rgb(0 0 0 / 0.7); }
 
 /* 펼쳐진 카드: 가운데를 기준으로 부채꼴. --i = 몇 번째 카드, --n = 카드 수, --w = 카드 폭 */
-.fan { --w: 104px; display: flex; justify-content: center; flex: 1; min-width: 0; padding: 20px 34px 0; box-sizing: border-box; }
+.fan { --w: 125px; display: flex; justify-content: center; flex: 1; min-width: 0; padding: 20px 34px 0; box-sizing: border-box; }
 /* 카드 한 자리(slot): 부채꼴의 기울기·겹침을 맡고, 마우스를 올려도 움직이지 않는다 */
 .slot {
   /* 가운데에서 멀수록 더 기울인다. 카드가 많으면 한 장당 기울기를 줄여 전체 각도가 너무 커지지 않게 한다 */
@@ -225,10 +225,32 @@ button.pack-cover.has-img, button.pack-cover.has-img:hover { padding: 0; backgro
 .tcg.art img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* 그림이 있는 카드 목록: 격자로 */
-.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; margin: 0; padding: 6px 0 10px; list-style: none; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); gap: 12px 10px; margin: 0; padding: 6px 0 10px; list-style: none; }
 .gallery img { display: block; width: 100%; height: auto; border: var(--line); border-radius: 6px; box-shadow: 2px 2px 0 var(--ink); }
 .gallery strong { display: block; margin-top: 4px; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
 .gallery span { color: var(--dim); font-size: 11px; }
+/* 누르면 카드 창이 열리는 칸: 버튼 모양은 지우고 그림만 */
+button.card-pick { display: block; width: 100%; min-height: 0; padding: 0; border: none; background: none; box-shadow: none; }
+button.card-pick:hover { transform: translateY(-2px); box-shadow: none; }
+button.chip-pick { min-height: 0; padding: 0; border: none; background: none; box-shadow: none; text-align: left; }
+.chips li:has(.chip-pick) { cursor: pointer; }
+/* 펼친 카드도 버튼이지만 버튼의 기본 움직임은 쓰지 않는다(자리의 마우스 반응이 맡는다) */
+button.tcg, button.tcg:hover, button.tcg:active { min-height: 0; text-align: left; }
+button.tcg:active { box-shadow: 3px 3px 0 var(--ink); }
+
+/* 카드 창: 큰 그림 + 시세 */
+.card-dialog { width: min(640px, calc(100vw - 32px)); box-sizing: border-box; padding: 18px; border: var(--line); border-radius: 10px; background: var(--card); color: var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+.card-dialog[open] { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.card-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+.card-dialog > img, .card-dialog > .blank { width: 100%; aspect-ratio: 245 / 337; height: auto; border: var(--line); border-radius: 8px; }
+.card-dialog > .blank { display: grid; place-items: center; background: var(--bg); color: var(--dim); }
+.dialog-close { position: absolute; top: 8px; right: 8px; min-height: 30px; padding: 2px 10px; font-weight: 800; }
+.card-info h3 { margin: 0 64px 2px 0; font-size: 1.2rem; font-weight: 800; }
+.card-info .price { display: flex; flex-direction: column; gap: 2px; margin: 12px 0; padding: 10px 12px; border: var(--line); border-radius: 8px; background: var(--bg); }
+.card-info .price small { color: var(--dim); font-size: 11px; }
+.price-big { font-size: 1.8rem; font-weight: 900; line-height: 1.1; }
+/* 그림이 없는 카드: 카드 모양의 빈 칸 */
+.gallery .blank { display: grid; place-items: center; aspect-ratio: 245 / 337; border: 2px dashed var(--dim); border-radius: 6px; background: var(--bg); color: var(--dim); font-size: 11px; }
 
 /* 등급별 카드 색: 색만으로 구분하지 않고 등급 글자를 함께 적는다 */
 .r-SAR { background: var(--point); }
@@ -245,6 +267,8 @@ button.pack-cover.has-img, button.pack-cover.has-img:hover { padding: 0; backgro
 .chips strong { display: block; font-size: 13px; font-weight: 800; }
 .chips span { color: var(--dim); font-size: 12px; }
 .pack summary { margin-top: 6px; cursor: pointer; font-weight: 700; font-size: 12px; }
+.all-cards { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--ink); }
+.all-cards > summary { font-size: 13px; }
 /* 움직임을 줄이도록 설정한 사람에게는 등장 효과를 끈다 */
 @media (prefers-reduced-motion: reduce) { .slot { animation: none; } .tcg { transition: none; } }
 
@@ -394,12 +418,13 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   .health-box strong { font-size: 12px; }
   .health-box .state { padding: 0 4px; font-size: 11px; }
   .health-box small { font-size: 10px; }
+  .card-dialog[open] { grid-template-columns: 1fr; } .card-dialog > img, .card-dialog > .blank { max-width: 220px; justify-self: center; }
   #summary { grid-template-columns: 1fr; } /* 요약 카드는 숫자와 힛카드가 함께 들어가야 해서 한 줄에 하나 */
   .card { height: 260px; } /* 폭이 넓어진 만큼 높이도 늘려 힛카드를 크게 */
   .hero { padding: 20px 16px; }
   .hero-title { font-size: 1.4rem; }
   .hero-cards .fan { --w: 84px; }
   #reset-btn, #batch-btn { min-height: 44px; }
-  .fan { --w: 84px; padding: 16px 26px 0; }
+  .fan { --w: 101px; padding: 16px 26px 0; }
   .store { grid-template-columns: 1fr; }
 }

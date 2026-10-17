@@ -120,24 +120,27 @@ async function koreanNameEn(enName) {
 }
 console.assert(slug('Kommo-o') === 'kommo-o' && slug('Mr. Mime') === 'mr-mime', 'slug');
 
-// 영어판 팩의 시크릿 카드 정보(그린 사람·포켓몬·등급·그림 주소). 같은 팩은 한 번만 읽는다.
+// 영어판 팩의 카드 정보(그린 사람·포켓몬·등급·그림 주소). part = 'secret'(시크릿 카드) 또는 'regular'(일반 카드).
+// 같은 것은 한 번만 읽는다.
 const enCache = new Map();
-async function enCards(setId) {
-  if (!enCache.has(setId)) {
+async function enCards(setId, part = 'secret') {
+  const key = setId + ' ' + part;
+  if (!enCache.has(key)) {
     const list = [];
     try {
       const set = await getJson(`https://api.tcgdex.net/v2/en/sets/${setId}`);
-      for (const brief of set.cards.filter(c => Number(c.localId) > set.cardCount.official && c.image)) {
+      const secret = c => Number(c.localId) > set.cardCount.official;
+      for (const brief of set.cards.filter(c => c.image && secret(c) === (part === 'secret'))) {
         try {
           const c = await getJson(`https://api.tcgdex.net/v2/en/cards/${brief.id}`);
           list.push({ image: brief.image, rarity: c.rarity, illustrator: c.illustrator, category: c.category, dexId: c.dexId || [] });
         } catch (e) { /* 한 장 실패는 건너뛴다 */ }
       }
-      log(`영어판 ${setId}: 시크릿 카드 ${list.length}장 읽음`);
+      log(`영어판 ${setId}: ${part === 'secret' ? '시크릿' : '일반'} 카드 ${list.length}장 읽음`);
     } catch (e) { log(`영어판 ${setId} 읽기 실패: ${e.message}`); }
-    enCache.set(setId, list);
+    enCache.set(key, list);
   }
-  return enCache.get(setId);
+  return enCache.get(key);
 }
 
 // 같은 그림의 카드인가: 그린 사람이 같고, 같은 포켓몬(트레이너 카드는 같은 종류)이고, 등급이 같아야 한다.
@@ -153,6 +156,19 @@ console.assert(sameArt({ illustrator: 'Mitsuhiro Arita', category: 'Pokemon', de
   { illustrator: 'mitsuhiro arita', category: 'Pokemon', dexId: [25], rarity: 'Special illustration rare' }), 'sameArt: 같은 그림');
 console.assert(!sameArt({ illustrator: '', category: 'Trainer', dexId: [], rarity: 'Special illustration rare' },
   { illustrator: '', category: 'Trainer', dexId: [], rarity: 'Special illustration rare' }), 'sameArt: 그린 사람을 모르면 짝짓지 않는다');
+
+// 일반 카드의 짝: 그린 사람·종류·포켓몬이 같은 영어판 일반 카드가 하나뿐일 때만 짝짓는다.
+// 여럿이면 등급까지 같은 것으로 좁히고, 그래도 여럿이면(같은 사람이 그린 트레이너스 카드 등) 짝짓지 않는다.
+function regularMatch(jp, list) {
+  let cand = list.filter(en => sameArt({ ...jp, rarity: null }, en));
+  if (cand.length > 1) cand = cand.filter(en => rarityGroup(en.rarity) === rarityGroup(jp.rarity));
+  return cand.length === 1 ? cand[0] : null;
+}
+{
+  const a = { illustrator: 'A', category: 'Trainer', dexId: [], rarity: 'Uncommon' };
+  console.assert(regularMatch(a, [{ ...a, image: 1 }]).image === 1, 'regularMatch: 하나');
+  console.assert(regularMatch(a, [{ ...a, image: 1 }, { ...a, image: 2 }]) === null, 'regularMatch: 여럿이면 짝짓지 않는다');
+}
 
 const unknownRarity = new Set();
 const packs = [];
@@ -171,10 +187,11 @@ for (const pack of PACKS) {
   try { set = await getJson(`https://api.tcgdex.net/v2/${lang}/sets/${pack.id}`); }
   catch (e) { log(`${pack.name}(${pack.id}) 팩 정보 실패: ${e.message}`); continue; }
   const official = pack.official || set.cardCount.official;
-  // 시크릿 카드 = 카드 번호가 정규 수록 수보다 큰 카드 (예: 111/080). 높은 등급은 모두 여기에 있다.
-  const secrets = set.cards.filter(c => Number(c.localId) > official);
-  const cards = [];
-  for (const brief of secrets) {
+  // 시크릿 카드 = 카드 번호가 정규 수록 수보다 큰 카드 (예: 111/080). 높은 등급은 모두 여기에 있다 → cards
+  // 나머지는 일반 카드 → regular (화면의 "전체 카드 보기"에만 쓴다)
+  const cards = [], regular = [];
+  for (const brief of set.cards) {
+    const secret = Number(brief.localId) > official;
     let c;
     try { c = await getJson(`https://api.tcgdex.net/v2/${lang}/cards/${brief.id}`); }
     catch (e) { log(`${pack.name} ${brief.localId}번 실패: ${e.message}`); continue; }
@@ -189,14 +206,14 @@ for (const pack of PACKS) {
       const sp = await species(c.dexId[0]);
       ko = { name: koreanName(c.name, sp), species: sp.ko || null };
     }
-    cards.push({
+    (secret ? cards : regular).push({
       no: `${c.localId}/${String(official).padStart(3, '0')}`,
       name: ko.name || c.name, // 한국어로 바꾸지 못하면 원래(일본어·영어) 이름 그대로
       jpName: c.name,          // 원래 이름(영어판 팩이면 영어 이름)
       species: ko.species,     // 어떤 포켓몬인지(한국어). 트레이너 카드는 없다
       rarity: code,
       rarityName,
-      hit,
+      hit: secret && hit,
       image: brief.image || null,             // 그림 주소(없으면 null). 뒤에 /low.webp 또는 /high.webp 를 붙여 쓴다
       imageLang: brief.image ? lang : null,   // 그림이 어느 나라 판인지
       // 아래 셋은 영어판 그림을 찾는 데만 쓰고 저장하지 않는다
@@ -215,10 +232,18 @@ for (const pack of PACKS) {
       if (match) { used.add(match.image); card.image = match.image; card.imageLang = 'en'; break; }
     }
   }
-  for (const card of cards) delete card._art;
-  packs.push({ id: pack.id, name: pack.name, jpName: set.name, releaseDate: set.releaseDate, official, total: set.cardCount.total, ...packMeta(pack), cards });
+  // 일반 카드도 일본어판 그림이 없으면 영어판 일반 카드에서 같은 그림을 찾는다
+  const usedRegular = new Set();
+  for (const card of regular.filter(c => !c.image)) {
+    for (const setId of EN_SETS[pack.id] || []) {
+      const match = regularMatch(card._art, (await enCards(setId, 'regular')).filter(en => !usedRegular.has(en.image)));
+      if (match) { usedRegular.add(match.image); card.image = match.image; card.imageLang = 'en'; break; }
+    }
+  }
+  for (const card of [...cards, ...regular]) delete card._art;
+  packs.push({ id: pack.id, name: pack.name, jpName: set.name, releaseDate: set.releaseDate, official, total: set.cardCount.total, ...packMeta(pack), cards, regular });
   const hits = cards.filter(c => c.hit);
-  log(`${pack.name}: 시크릿 ${cards.length}장(그림 ${cards.filter(c => c.image).length}장, 영어판 ${cards.filter(c => c.imageLang === 'en').length}장), 힛카드 ${hits.length}장(그림 ${hits.filter(c => c.image).length}장)`);
+  log(`${pack.name}: 시크릿 ${cards.length}장(그림 ${cards.filter(c => c.image).length}장, 영어판 ${cards.filter(c => c.imageLang === 'en').length}장), 힛카드 ${hits.length}장(그림 ${hits.filter(c => c.image).length}장), 일반 ${regular.length}장(그림 ${regular.filter(c => c.image).length}장, 영어판 ${regular.filter(c => c.imageLang === 'en').length}장)`);
 }
 
 // 점검: 힛카드를 가려내지 못한 팩을 알려 준다(공개 자료에 등급이 없는 팩)

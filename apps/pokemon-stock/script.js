@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '26';
+const VERSION = '27';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -771,9 +771,20 @@ const cardTitle = c => c.name === c.jpName && c.species ? `${c.jpName} (${c.spec
 // 카드 한 장을 목록의 한 칸으로: "이름 / 111/080 · SAR"
 function cardChip(c) {
   const li = el('li');
-  li.append(el('strong', cardTitle(c)), el('span', `${c.no} · ${c.rarity}`));
-  li.title = `${c.rarityName} · 원래 이름: ${c.jpName}`; // 마우스를 올리면 나오는 설명
+  const btn = pickButton(c, 'chip-pick');
+  btn.append(el('strong', cardTitle(c)), el('span', `${c.no} · ${c.rarity}`));
+  btn.title = `${c.rarityName} · 원래 이름: ${c.jpName}`; // 마우스를 올리면 나오는 설명
+  li.append(btn);
   return li;
+}
+
+// 누르면 카드 창(큰 그림 + 시세)을 여는 버튼
+function pickButton(c, className) {
+  const btn = el('button', '', className);
+  btn.type = 'button';
+  btn.setAttribute('aria-label', `${cardTitle(c)} ${c.no} 시세 보기`);
+  btn.addEventListener('click', () => openCard(c));
+  return btn;
 }
 
 // 카드 그림 한 장. 그림은 TCGdex 서버에 있는 일본어판(없으면 영어판) 그림이다(주소 뒤에 /low.webp = 작은 그림)
@@ -788,16 +799,124 @@ function cardImage(c) {
   return img;
 }
 
-// 그림이 있는 카드를 목록의 한 칸으로: 그림(누르면 큰 그림이 새 탭에 열림) + 이름·번호
+// 그림이 있는 카드를 목록의 한 칸으로: 그림(누르면 카드 창) + 이름·번호
 function cardFigure(c) {
   const li = el('li');
-  const link = el('a');
-  link.href = c.image + '/high.webp';
-  link.target = '_blank';
-  link.rel = 'noopener';
-  link.append(cardImage(c));
-  li.append(link, el('strong', cardTitle(c)), el('span', (c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`) + (c.imageLang === 'en' ? ' · 영어판 그림' : '')));
+  const btn = pickButton(c, 'card-pick');
+  btn.append(cardImage(c));
+  li.append(btn, el('strong', cardTitle(c)), el('span', (c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`) + (c.imageLang === 'en' ? ' · 영어판 그림' : '')));
   return li;
+}
+
+// 그림이 없는 카드를 그림 격자의 한 칸으로: 카드 모양의 빈 칸 + 이름·번호
+function cardBlank(c) {
+  const li = el('li');
+  const btn = pickButton(c, 'card-pick');
+  btn.append(el('span', '그림 없음', 'blank'));
+  li.append(btn, el('strong', cardTitle(c)), el('span', c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`));
+  return li;
+}
+
+// ---------- 카드 창: 큰 그림 + 시세 ----------
+// 시세는 TCGdex 공개 자료에 들어 있는 Cardmarket(유럽 카드 거래 사이트)의 거래가(유로)다. 카드를 누를 때만 불러온다.
+// 일본어판 카드 시세를 먼저 찾고, 없으면 같은 그림의 영어판 카드 시세를 찾는다.
+const priceCache = new Map(); // "언어/카드 id" → Promise(시세 또는 null)
+function priceOf(lang, id) {
+  const key = lang + '/' + id;
+  if (!priceCache.has(key)) {
+    priceCache.set(key, fetch(`https://api.tcgdex.net/v2/${lang}/cards/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(10000) })
+      .then(res => res.ok ? res.json() : null)
+      .then(d => { const m = d && d.pricing && d.pricing.cardmarket; return m && m.avg != null ? { ...m, lang } : null; })
+      .catch(() => { priceCache.delete(key); return null; })); // 실패는 기억하지 않는다(다음에 다시 시도)
+  }
+  return priceCache.get(key);
+}
+// 영어판 그림 주소에서 영어판 카드 id 를 꺼낸다: ".../en/me/me05/120" → "me05-120"
+const enIdOf = image => { const m = String(image).match(/\/en\/[^/]+\/([^/]+)\/([^/]+)$/); return m ? `${m[1]}-${m[2]}` : null; };
+console.assert(enIdOf('https://assets.tcgdex.net/en/me/me05/120') === 'me05-120' && enIdOf('https://assets.tcgdex.net/ja/M/M5/111') === null, 'enIdOf');
+async function cardPrice(c) {
+  const own = await priceOf(c.lang, c.id);
+  if (own || c.lang === 'en' || c.imageLang !== 'en') return own;
+  const enId = enIdOf(c.image);
+  return enId ? priceOf('en', enId) : null;
+}
+
+// 원화 환율: 공개 환율 서비스 Frankfurter(유럽중앙은행 기준 환율, 하루 한 번 갱신)에서 그날 환율을 받는다.
+// 보내는 값은 화폐 단위(EUR 등)뿐이다. 못 받으면 원래 화폐로만 보여 준다.
+const rateCache = new Map(); // 화폐 단위 → Promise({ rate: 1단위당 원, date } 또는 null)
+function krwRate(unit) {
+  if (!rateCache.has(unit)) {
+    rateCache.set(unit, fetch(`https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(unit)}&symbols=KRW`, { signal: AbortSignal.timeout(10000) })
+      .then(res => res.ok ? res.json() : null)
+      .then(d => d && d.rates && d.rates.KRW ? { rate: d.rates.KRW, date: d.date } : null)
+      .catch(() => { rateCache.delete(unit); return null; }));
+  }
+  return rateCache.get(unit);
+}
+const SYMBOL = { EUR: '€', USD: '$' };
+// 원화 금액: 1만 원 이상은 100원, 100원 이상은 10원, 그보다 작으면 1원 단위로 반올림
+const won = n => { const step = n >= 10000 ? 100 : n >= 100 ? 10 : 1; return '₩' + (Math.round(n / step) * step).toLocaleString('ko-KR'); };
+console.assert(won(266.43 * 1499.01) === '₩399,400' && won(0.03 * 1499.01) === '₩45' && won(0.5 * 1499.01) === '₩750', 'won');
+
+function renderPrice(box, p, fx) {
+  if (!p) { box.replaceChildren(el('strong', '시세 자료 없음'), el('small', '아직 거래 기록이 없거나 공개 자료에 없는 카드입니다.')); return; }
+  const unit = p.unit || 'EUR';
+  const orig = n => n == null ? '-' : (SYMBOL[unit] || unit + ' ') + Number(n).toFixed(2);
+  const money = n => n == null ? '-' : fx ? won(n * fx.rate) : orig(n); // 환율이 있으면 원화로
+  box.replaceChildren(
+    el('strong', `${LANG_NAME[p.lang]} 카드 시세`),
+    el('span', (fx ? '약 ' : '') + money(p.avg), 'price-big'),
+    el('small', `평균 거래가${fx ? ` (${orig(p.avg)})` : ''}`),
+    el('span', `최저가 ${money(p.low)} · 추세 ${money(p.trend)} · 7일 평균 ${money(p.avg7)} · 30일 평균 ${money(p.avg30)}`),
+    el('small', (fx ? `환율 1${unit === 'EUR' ? '유로' : unit} = ${fx.rate.toLocaleString('ko-KR')}원 (${fx.date} 유럽중앙은행 기준). ` : '원화 환율을 받지 못해 원래 화폐로 보여 줍니다. ')
+      + `${String(p.updated).slice(0, 10)} 기준 Cardmarket(유럽 카드 거래 사이트) 거래가이며, 한국 시세와는 다를 수 있습니다.`),
+  );
+}
+
+// 카드 창(dialog = 브라우저 기본 대화 상자. Esc 나 바깥을 누르면 닫힌다)
+let cardDialog = null;
+function openCard(c) {
+  if (!cardDialog) {
+    cardDialog = el('dialog', '', 'card-dialog');
+    cardDialog.addEventListener('click', e => { if (e.target === cardDialog) cardDialog.close(); }); // 바깥(어두운 곳)을 누르면 닫는다
+    document.body.append(cardDialog);
+  }
+  const close = el('button', '닫기', 'dialog-close');
+  close.type = 'button';
+  close.addEventListener('click', () => cardDialog.close());
+  let pic = el('span', '그림 없음', 'blank');
+  if (c.image) { pic = el('img'); pic.src = c.image + '/high.webp'; pic.alt = `${cardTitle(c)} ${c.no} 큰 그림`; }
+  const price = el('div', '시세를 불러오는 중…', 'price');
+  price.setAttribute('aria-live', 'polite');
+  const info = el('div', '', 'card-info');
+  info.append(el('h3', cardTitle(c)), el('p', `${c.no} · ${c.rarityName}` + (c.imageLang === 'en' ? ' · 영어판 그림' : ''), 'pack-meta'), price);
+  if (c.image) {
+    const link = el('a', '큰 그림 새 탭에서 보기');
+    link.href = c.image + '/high.webp';
+    link.target = '_blank';
+    link.rel = 'noopener';
+    info.append(link);
+  }
+  cardDialog.replaceChildren(close, pic, info);
+  cardDialog.showModal();
+  close.focus();
+  cardPrice(c).then(async p => renderPrice(price, p, p && await krwRate(p.unit || 'EUR')));
+}
+
+// 팩의 전체 카드(일반 + 시크릿)를 번호순으로. 접혀 있다가 처음 펼칠 때 만든다(카드가 많아서)
+function allCards(pack) {
+  const all = (pack.regular || []).concat(pack.cards);
+  if (!pack.regular || !pack.regular.length) return null; // 예전 형식의 자료에는 일반 카드가 없다
+  const pictured = all.filter(c => c.image).length;
+  const whole = el('details', '', 'all-cards');
+  whole.append(el('summary', `이 팩의 전체 카드 ${all.length}장 보기 (그림 ${pictured}장${pictured < all.length ? `, 그림 없음 ${all.length - pictured}장` : ''})`));
+  whole.addEventListener('toggle', () => {
+    if (!whole.open || whole.children.length > 1) return;
+    const list = el('ul', '', 'gallery');
+    list.append(...all.map(c => c.image ? cardFigure(c) : cardBlank(c)));
+    whole.append(list);
+  });
+  return whole;
 }
 
 // 카드 여러 장을 목록으로: 그림이 있으면 그림 격자, 없으면 글자 칸
@@ -858,6 +977,8 @@ function packPanel(pack) {
     }
     box.append(el('p', `이 팩은 공개 자료에 등급 정보가 없어 힛카드를 가려내지 못했습니다. 시크릿 카드 ${others.length}장을 번호순으로 보여 줍니다(힛카드는 보통 번호가 큰 쪽에 있습니다).`, 'pack-meta'));
     box.append(cardList(others, true));
+    const whole = allCards(pack);
+    if (whole) box.append(whole);
     return box;
   }
   if (hits.length === 0) box.append(el('p', '이 팩은 공개 자료에 등급 정보가 없어, 번호가 가장 큰 8장을 펼쳐 보여 줍니다(힛카드는 보통 번호가 큰 쪽에 있지만 단정할 수는 없습니다).', 'pack-meta'));
@@ -871,7 +992,7 @@ function packPanel(pack) {
   fan.hidden = true;
   fan.style.setProperty('--n', featured.length); // CSS 가 카드 수(--n)와 순서(--i)로 기울기를 계산한다
   featured.forEach((c, i) => {
-    const card = el('div', '', c.image ? 'tcg art' : 'tcg r-' + c.rarity.replace(/[^A-Za-z]/g, ''));
+    const card = pickButton(c, c.image ? 'tcg art' : 'tcg r-' + c.rarity.replace(/[^A-Za-z]/g, '')); // 누르면 카드 창
     if (c.image) card.append(cardImage(c)); // 그림이 있으면 그림으로
     else card.append(el('span', c.rarity, 'rarity'), el('strong', cardTitle(c)), el('span', c.no, 'no')); // 없으면 글자 카드로
     fan.append(fanSlot(card, i));
@@ -891,6 +1012,8 @@ function packPanel(pack) {
     more.append(el('summary', hits.length ? `그 밖의 높은 등급 카드 ${others.length}장 (AR·SR 등)` : `나머지 시크릿 카드 ${others.length}장`), cardList(others, true));
     box.append(more);
   }
+  const whole = allCards(pack);
+  if (whole) box.append(whole);
   return box;
 }
 
@@ -1147,6 +1270,8 @@ fetch('cards.json?v=' + VERSION) // 주소에 버전을 붙여, 배포 뒤에 �
   .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
   .then(json => {
     cardData = json;
+    // 카드마다 TCGdex 카드 id(팩 번호-카드 번호)와 자료 언어를 붙인다. 시세를 찾을 때 쓴다
+    for (const p of cardData.packs) for (const c of (p.regular || []).concat(p.cards)) { c.id = `${p.id}-${c.no.split('/')[0]}`; c.lang = p.lang || 'ja'; }
     renderPacks();
     renderHero();
     $('pick-mode').checked = !!localStorage.getItem('pokemon-stock-pick');
