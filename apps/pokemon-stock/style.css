@@ -142,8 +142,9 @@ header label.pick { padding: 0; font-size: 12px; font-weight: 700; }
 .pack h3 { margin: 0; font-size: 1.15rem; font-weight: 800; }
 .pack-meta { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
 
-/* 팩 이름 앞의 작은 팩 모양. --c = 그 팩의 색 */
-.pack-icon { flex: 0 0 11px; height: 16px; border: 1.5px solid var(--ink); border-radius: 2px; background: var(--c); }
+/* 팩 목록: 이름과 설명을 한 줄로. 이름이 길면 말줄임표 */
+#packs label span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#packs label small { white-space: nowrap; }
 
 /* 무대: 닫힌 팩 또는 펼쳐진 카드가 가운데에 놓인다. 뒤 배경은 팩의 색(--c)을 옅게 깐 빗금 무늬 */
 .stage {
@@ -316,6 +317,9 @@ legend .all { min-height: 22px; margin-left: 6px; padding: 0 8px; font-size: 12p
 /* 체크박스 | 이름 | 점포 수(오른쪽 끝) 를 한 줄에 */
 header label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
 header label small { margin-left: auto; color: var(--dim); font-size: 11px; }
+/* 조회할 편의점·권역: 점포 수를 이름 뒤 같은 자리에서 왼쪽 정렬(이름 칸 너비를 6em 으로 맞춘다) */
+#chains label, #regions label { display: grid; grid-template-columns: auto 6em 1fr; }
+#chains label small, #regions label small { margin-left: 0; }
 .checks .hint { display: block; margin-top: 4px; color: var(--dim); font-size: 11px; } /* 체크박스 아래의 짧은 안내 */
 header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); } /* accent-color = 체크 표시의 색 */
 #estimate { margin: 8px 0 0; font-weight: 700; font-size: 12px; }

@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '23';
+const VERSION = '24';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -423,7 +423,7 @@ function paint(force = false) {
 // 편의점마다 그 편의점의 조회가 모두 끝날 때까지, 요약 카드 안에서 조회 중인 팩의 힛카드가 한 장씩 넘어간다.
 const dealers = new Map(); // 편의점 id → { box, img, name, i }
 let dealTimer = null;
-const DEAL_MS = 2000; // 카드 한 장을 보여 주는 시간(2초)
+const DEAL_MS = 3000; // 카드 한 장을 보여 주는 시간(3초)
 const calm = matchMedia('(prefers-reduced-motion: reduce)'); // 기기의 "동작 줄이기" 설정
 
 // 넘길 카드: 조회 중인 팩의 힛카드(등급 자료가 없는 팩은 번호가 큰 8장) 중 그림이 있는 것.
@@ -752,10 +752,8 @@ function renderPacks() {
     input.id = 'p-' + p.id;
     input.checked = saved.includes(p.id);
     const hits = p.cards.filter(c => c.hit).length;
-    const icon = el('i', '', 'pack-icon'); // 팩 이름 앞의 작은 팩 모양(이 팩의 색)
-    icon.style.setProperty('--c', packColor(p.id));
-    icon.setAttribute('aria-hidden', 'true'); // 꾸밈이라 화면 읽기 프로그램은 건너뛰게 한다
-    label.append(input, icon, el('span', p.name), el('small', hits ? `힛카드 ${hits}장` : p.cards.every(c => c.image) ? '카드 그림 있음' : '등급 자료 없음'));
+    label.title = p.name; // 이름이 길어 말줄임표로 줄었을 때 마우스를 올리면 전체 이름이 보인다
+    label.append(input, el('span', p.name), el('small', hits ? `힛카드 ${hits}장` : p.cards.every(c => c.image) ? '그림 있음' : '등급 자료 없음'));
     $('packs').append(label);
   }
   $('packs').addEventListener('change', () => {
