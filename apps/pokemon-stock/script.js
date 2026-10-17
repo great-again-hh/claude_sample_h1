@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '19';
+const VERSION = '20';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -685,11 +685,12 @@ function cardChip(c) {
   return li;
 }
 
-// 카드 그림 한 장. 그림은 TCGdex 서버에 있는 일본어판 그림이다(주소 뒤에 /low.webp = 작은 그림)
+// 카드 그림 한 장. 그림은 TCGdex 서버에 있는 일본어판(없으면 영어판) 그림이다(주소 뒤에 /low.webp = 작은 그림)
+const LANG_NAME = { ja: '일본어판', en: '영어판' };
 function cardImage(c) {
   const img = el('img');
   img.src = c.image + '/low.webp';
-  img.alt = `${cardTitle(c)} ${c.no}`; // 그림을 볼 수 없는 사람에게 읽어 주는 설명
+  img.alt = `${cardTitle(c)} ${c.no} (${LANG_NAME[c.imageLang] || ''} 그림)`; // 그림을 볼 수 없는 사람에게 읽어 주는 설명
   img.loading = 'lazy';                // 화면에 보일 때쯤 불러온다
   img.width = 245;
   img.height = 337;
@@ -704,7 +705,7 @@ function cardFigure(c) {
   link.target = '_blank';
   link.rel = 'noopener';
   link.append(cardImage(c));
-  li.append(link, el('strong', cardTitle(c)), el('span', c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`));
+  li.append(link, el('strong', cardTitle(c)), el('span', (c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`) + (c.imageLang === 'en' ? ' · 영어판 그림' : '')));
   return li;
 }
 

@@ -4,8 +4,8 @@
 // 데이터 출처 (둘 다 누구나 쓸 수 있는 공개 자료)
 // - TCGdex (api.tcgdex.net): 팩에 들어 있는 카드 번호·이름·등급. 최신 팩은 일본어판 자료만 있다.
 // - PokeAPI (pokeapi.co): 포켓몬의 한국어 이름. 일본어 카드 이름을 한국어로 바꾸는 데 쓴다.
-// 카드 그림: TCGdex 에 그림 주소가 있는 카드만 그 주소를 적어 둔다(일본어판 그림, 그림 파일은 TCGdex 서버에 있다).
-// 최신 팩은 그림이 없다.
+// 카드 그림: TCGdex 에 일본어판 그림이 있으면 그것을, 없으면 같은 그림의 영어판 카드를 찾아 그 그림 주소를 적어 둔다.
+// (그림 파일은 TCGdex 서버에 있다. 영어판은 팩 구성과 카드 번호가 달라서, 그린 사람·포켓몬·등급이 모두 같은 카드를 찾는다)
 import { writeFileSync } from 'node:fs';
 
 // 팩 목록: TCGdex 의 일본어판 팩 번호와 한국어판 이름 (최신 팩이 위).
@@ -27,6 +27,14 @@ const PACKS = [
   { id: 'SV8a', name: '테라스탈 페스타 ex' },
   { id: 'SV8', name: '초전브레이커' },
 ];
+
+// 일본어판 팩 → 같은 카드가 들어 있는 영어판 팩(TCGdex 번호). 앞에 적은 팩부터 찾는다.
+// 영어판은 일본어판 두 팩을 하나로 묶어 내기도 해서(예: 메가브레이브+메가심포니아 → Mega Evolution) 여러 팩이 같은 곳을 가리킨다.
+// 스톰에메랄다는 아직 영어판이 없다.
+const EN_SETS = {
+  M5: ['me05', 'me04'], M4: ['me04', 'me05'], M3: ['me03'], M2a: ['me02.5'], M2: ['me02'], M1L: ['me01'], M1S: ['me01'],
+  SV11B: ['sv10.5b'], SV11W: ['sv10.5w'], SV10: ['sv10'], SV9a: ['sv10', 'sv09'], SV9: ['sv09'], SV8a: ['sv08.5'], SV8: ['sv08'],
+};
 
 // 등급: TCGdex 의 영어 표기 → [약자, 한국어 이름, 힛카드인가]
 // 힛카드 = 팩에서 가장 드문 등급(SAR 이상)으로 정했다.
@@ -92,6 +100,40 @@ console.assert(koreanName('メガスターミーex', { ko: '아쿠스타', ja: '
 console.assert(koreanName('ニャースex', { ko: '나옹', ja: 'ニャース' }) === '나옹 ex', 'koreanName: ex');
 console.assert(koreanName('リーリエのピッピex', { ko: '삐삐', ja: 'ピッピ' }) === null, 'koreanName: 복잡한 이름은 바꾸지 않는다');
 
+// 영어판 팩의 시크릿 카드 정보(그린 사람·포켓몬·등급·그림 주소). 같은 팩은 한 번만 읽는다.
+const enCache = new Map();
+async function enCards(setId) {
+  if (!enCache.has(setId)) {
+    const list = [];
+    try {
+      const set = await getJson(`https://api.tcgdex.net/v2/en/sets/${setId}`);
+      for (const brief of set.cards.filter(c => Number(c.localId) > set.cardCount.official && c.image)) {
+        try {
+          const c = await getJson(`https://api.tcgdex.net/v2/en/cards/${brief.id}`);
+          list.push({ image: brief.image, rarity: c.rarity, illustrator: c.illustrator, category: c.category, dexId: c.dexId || [] });
+        } catch (e) { /* 한 장 실패는 건너뛴다 */ }
+      }
+      log(`영어판 ${setId}: 시크릿 카드 ${list.length}장 읽음`);
+    } catch (e) { log(`영어판 ${setId} 읽기 실패: ${e.message}`); }
+    enCache.set(setId, list);
+  }
+  return enCache.get(setId);
+}
+
+// 같은 그림의 카드인가: 그린 사람이 같고, 같은 포켓몬(트레이너 카드는 같은 종류)이고, 등급이 같아야 한다.
+// 그린 사람 정보가 없으면 짐작하지 않는다(틀린 그림을 보여 주느니 그림이 없는 편이 낫다).
+const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+// 등급 표기를 묶는다: TCGdex 는 같은 등급을 판마다 다르게 적기도 한다(금색 카드 = Hyper rare / Mega Hyper Rare 등)
+const rarityGroup = r => ({ 'mega hyper rare': 'hyper rare', 'secret rare': 'ultra rare' })[String(r).toLowerCase()] || String(r).toLowerCase();
+const sameArt = (jp, en) => norm(jp.illustrator) && norm(jp.illustrator) === norm(en.illustrator)
+  && jp.category === en.category
+  && [...(jp.dexId || [])].sort().join() === [...en.dexId].sort().join()
+  && (!jp.rarity || jp.rarity === 'None' || rarityGroup(jp.rarity) === rarityGroup(en.rarity));
+console.assert(sameArt({ illustrator: 'Mitsuhiro Arita', category: 'Pokemon', dexId: [25], rarity: 'Special illustration rare' },
+  { illustrator: 'mitsuhiro arita', category: 'Pokemon', dexId: [25], rarity: 'Special illustration rare' }), 'sameArt: 같은 그림');
+console.assert(!sameArt({ illustrator: '', category: 'Trainer', dexId: [], rarity: 'Special illustration rare' },
+  { illustrator: '', category: 'Trainer', dexId: [], rarity: 'Special illustration rare' }), 'sameArt: 그린 사람을 모르면 짝짓지 않는다');
+
 const unknownRarity = new Set();
 const packs = [];
 for (const pack of PACKS) {
@@ -120,14 +162,27 @@ for (const pack of PACKS) {
       rarityName,
       hit,
       image: brief.image || null,             // 그림 주소(없으면 null). 뒤에 /low.webp 또는 /high.webp 를 붙여 쓴다
+      imageLang: brief.image ? 'ja' : null,   // 그림이 어느 나라 판인지
+      // 아래 셋은 영어판 그림을 찾는 데만 쓰고 저장하지 않는다
+      _art: { illustrator: c.illustrator, category: c.category, dexId: c.dexId || [], rarity: c.rarity },
     });
   }
   // 시크릿 카드의 등급이 전부 똑같이 적혀 있으면 아직 자료가 정리되지 않은 것이다 → 등급을 모르는 것으로 둔다
   if (cards.length > 5 && new Set(cards.map(c => c.rarity)).size === 1) {
     for (const c of cards) { c.rarity = '?'; c.rarityName = '등급 자료 없음'; c.hit = false; }
   }
+  // 일본어판 그림이 없는 카드는 영어판에서 같은 그림을 찾는다
+  const used = new Set(); // 이미 짝지은 영어판 카드(한 장을 두 번 쓰지 않는다)
+  for (const card of cards.filter(c => !c.image)) {
+    for (const setId of EN_SETS[pack.id] || []) {
+      const match = (await enCards(setId)).find(en => !used.has(en.image) && sameArt(card._art, en));
+      if (match) { used.add(match.image); card.image = match.image; card.imageLang = 'en'; break; }
+    }
+  }
+  for (const card of cards) delete card._art;
   packs.push({ id: pack.id, name: pack.name, jpName: set.name, releaseDate: set.releaseDate, official, total: set.cardCount.total, cards });
-  log(`${pack.name}: 시크릿 ${cards.length}장, 힛카드 ${cards.filter(c => c.hit).length}장`);
+  const hits = cards.filter(c => c.hit);
+  log(`${pack.name}: 시크릿 ${cards.length}장(그림 ${cards.filter(c => c.image).length}장, 영어판 ${cards.filter(c => c.imageLang === 'en').length}장), 힛카드 ${hits.length}장(그림 ${hits.filter(c => c.image).length}장)`);
 }
 
 // 점검: 힛카드를 가려내지 못한 팩을 알려 준다(공개 자료에 등급이 없는 팩)
@@ -135,7 +190,7 @@ for (const p of packs) if (!p.cards.some(c => c.hit)) log(`${p.name}: 등급 자
 
 writeFileSync(new URL('./cards.json', import.meta.url), JSON.stringify({
   builtAt: new Date().toLocaleString('sv-SE').replace(' ', 'T'),
-  source: 'TCGdex(일본어판 카드 자료) · PokeAPI(한국어 포켓몬 이름)',
+  source: 'TCGdex(일본어판 카드 자료, 일본어판·영어판 카드 그림) · PokeAPI(한국어 포켓몬 이름)',
   packs,
 }));
 if (unknownRarity.size) log(`등급 표에 없는 표기: ${[...unknownRarity].join(' / ')}`);
