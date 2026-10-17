@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '24';
+const VERSION = '25';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -945,7 +945,7 @@ function renderSummary() {
       : result.stopped && result.left[chain.id] > 0 ? ['중지됨', 'wait']
       : found.length === 0 && !chain.note ? ['조회 불가', 'bad'] : ['완료', 'ok'];
 
-    const card = el('button', '', sum.inStock > 0 ? 'card has-stock' : 'card');
+    const card = el('button', '', 'card' + (sum.inStock > 0 ? ' has-stock' : '') + (busy ? ' busy' : ''));
     card.type = 'button';
     card.setAttribute('aria-pressed', String(chainFilter === chain.id));
     const head = el('span', '', 'card-head');
@@ -967,9 +967,6 @@ function renderSummary() {
       }
       main.append(big, stats);
     }
-    const body = el('span', '', 'card-body');
-    body.append(main);
-    if (busy) body.append(dealer(chain.id)); // 조회가 끝날 때까지 힛카드가 한 장씩 넘어간다(일괄 조회면 팩이 바뀌어도 계속)
 
     // 맨 아래 줄: 어떤 상품을 조회했는지. 넘치면 말줄임표로 줄이고, 마우스를 올리면 전체가 보인다
     let foot;
@@ -992,7 +989,8 @@ function renderSummary() {
       if (result.failed[chain.id] && !why) foot += ` · 조회 ${result.calls[chain.id]}회 중 ${result.failed[chain.id]}회 실패`;
     }
     card.title = foot;
-    card.append(head, body, el('small', foot, 'card-foot'));
+    card.append(head, main, el('small', foot, 'card-foot'));
+    if (busy) card.append(dealer(chain.id)); // 조회가 끝날 때까지 오른쪽에서 힛카드가 넘어간다(일괄 조회면 팩이 바뀌어도 계속)
     // 카드를 누르면 아래 목록을 그 편의점만으로 좁힌다. 다시 누르면 전체로 돌아간다.
     card.addEventListener('click', () => {
       chainFilter = chainFilter === chain.id ? null : chain.id;

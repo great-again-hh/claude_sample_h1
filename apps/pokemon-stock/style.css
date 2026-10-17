@@ -227,7 +227,7 @@ button.pack-cover[aria-expanded], button.pack-cover:hover { background: var(--c,
 
 /* 편의점 연결 상태 박스 4개 */
 #health-wrap { margin-bottom: 24px; }
-#health { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+#health { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } /* 편의점 4곳을 항상 한 줄에 */
 .health-box { padding: 10px 12px; border: var(--line); border-radius: 6px; background: var(--card); box-shadow: var(--shadow); }
 .health-box strong { display: block; font-size: 1.05rem; font-weight: 800; }
 .health-box small { display: block; margin-top: 4px; color: var(--dim); font-size: 12px; }
@@ -263,7 +263,10 @@ button.pack-cover[aria-expanded], button.pack-cover:hover { background: var(--c,
 
 /* 요약 카드: 모두 같은 크기. auto-fill = 카드 수와 상관없이 칸 너비가 일정하다(좁으면 자동으로 줄바꿈) */
 #summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-.card { display: flex; flex-direction: column; gap: 8px; width: 100%; height: 220px; padding: 10px 12px; overflow: hidden; }
+.card { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px 10px; width: 100%; height: 220px; padding: 10px 12px; overflow: hidden; }
+/* 조회 중: 오른쪽은 힛카드(머리줄 아래부터 카드 바닥까지). 안쪽 너비의 50% = 박스 전체 너비의 약 45% */
+.card.busy { grid-template-columns: minmax(0, 1fr) 50%; }
+.card-head { grid-column: 1 / -1; }
 .card small { display: block; color: var(--dim); font-size: 12px; }
 /* 머리줄: 편의점 이름 왼쪽, 상태 표시 오른쪽 */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -273,30 +276,29 @@ button.pack-cover[aria-expanded], button.pack-cover:hover { background: var(--c,
 .pill.ok { background: var(--ok); }
 .pill.bad { background: #ffb3b3; }
 .pill.wait { color: var(--dim); }
-/* 가운데: 숫자(왼쪽) + 조회 중이면 힛카드(오른쪽) */
-.card-body { flex: 1; display: flex; gap: 10px; min-height: 0; }
-.card-main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; }
+.card-main { display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; }
 .card-wait { color: var(--dim); font-weight: 700; }
-.big { display: flex; align-items: baseline; gap: 4px; }
+.big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 4px; }
 .big b { font-size: 2.2rem; font-weight: 900; line-height: 1; }
-.big span { font-weight: 700; }
+.big span { font-weight: 700; white-space: nowrap; }
 .has-stock .big b { padding: 2px 6px; border: var(--line); background: var(--ok); }
 /* 작은 숫자 3칸: 품절 · 미확인 · 전체 */
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ink); border-radius: 6px; overflow: hidden; background: var(--card); }
 .stats > span { display: flex; flex-direction: column; align-items: center; padding: 2px 0; }
 .stats > span + span { border-left: 1px solid var(--ink); }
 .stats b { font-weight: 800; line-height: 1.3; }
-.stats small { font-size: 11px; }
+.stats small { font-size: 10px; white-space: nowrap; }
 /* 맨 아래 줄: 두 줄까지만 보이고 넘치면 말줄임표 */
-.card-foot { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em; line-height: 1.4; }
+.card .card-foot { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em; line-height: 1.4; }
 
 /* aria-expanded / aria-pressed 가 true 인 버튼 = 지금 펼쳐졌거나 선택된 것 → 노랗게 */
 button[aria-expanded="true"], button[aria-pressed="true"] { background: var(--point); }
 
 
 /* 편의점의 첫 결과를 기다리는 동안 힛카드가 한 장씩 넘어가는 자리 (넘기는 움직임은 script.js 의 deal) */
-.deal { flex: none; width: 76px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.deal img { width: 62px; aspect-ratio: 245 / 337; border: var(--line); border-radius: 5px; background: var(--bg); box-shadow: 2px 2px 0 var(--ink); }
+/* container-type: size = 안쪽에서 이 자리의 너비(cqw)·높이(cqh)를 잴 수 있게 한다. 카드는 자리에 들어가는 가장 큰 크기로 */
+.deal { grid-column: 2; grid-row: 2 / -1; container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.deal img { width: min(100cqw - 4px, (100cqh - 20px) * 245 / 337); aspect-ratio: 245 / 337; border: var(--line); border-radius: 6px; background: var(--bg); box-shadow: 2px 2px 0 var(--ink); }
 .deal small { width: 100%; text-align: center; color: var(--ink); font-size: 10px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 #panel { margin-top: 28px; }
@@ -364,8 +366,13 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   button, legend .all { min-height: 44px; }
   header label { padding: 10px 0; }
   .map a { padding: 12px 0; }
-  #health { grid-template-columns: 1fr 1fr; }
+  #health { gap: 6px; }
+  .health-box { padding: 6px; }
+  .health-box strong { font-size: 12px; }
+  .health-box .state { padding: 0 4px; font-size: 11px; }
+  .health-box small { font-size: 10px; }
   #summary { grid-template-columns: 1fr; } /* 요약 카드는 숫자와 힛카드가 함께 들어가야 해서 한 줄에 하나 */
+  .card { height: 260px; } /* 폭이 넓어진 만큼 높이도 늘려 힛카드를 크게 */
   .hero { padding: 20px 16px; }
   .hero-title { font-size: 1.4rem; }
   .hero-cards .fan { --w: 84px; }
