@@ -1,32 +1,39 @@
 // 팩별 힛카드 목록 파일(cards.json)을 만드는 스크립트. 웹페이지가 아니라 내 컴퓨터에서 한 번씩 실행한다.
 // 실행:  node build-cards.mjs      (새 팩이 나오면 PACKS 에 한 줄 추가하고 다시 실행)
+//        node build-cards.mjs 30th M6   ← 적은 팩만 다시 만들고, 나머지 팩은 지금 cards.json 의 내용을 그대로 쓴다
 //
 // 데이터 출처 (둘 다 누구나 쓸 수 있는 공개 자료)
 // - TCGdex (api.tcgdex.net): 팩에 들어 있는 카드 번호·이름·등급. 최신 팩은 일본어판 자료만 있다.
 // - PokeAPI (pokeapi.co): 포켓몬의 한국어 이름. 일본어 카드 이름을 한국어로 바꾸는 데 쓴다.
 // 카드 그림: TCGdex 에 일본어판 그림이 있으면 그것을, 없으면 같은 그림의 영어판 카드를 찾아 그 그림 주소를 적어 둔다.
 // (그림 파일은 TCGdex 서버에 있다. 영어판은 팩 구성과 카드 번호가 달라서, 그린 사람·포켓몬·등급이 모두 같은 카드를 찾는다)
-import { writeFileSync } from 'node:fs';
+// 팩 그림: 포켓몬코리아 공식 사이트(pokemoncard.co.kr 상품 목록)의 한국어판 팩 그림 주소를 적어 둔다(2026-10-18 사용자 요청).
+import { readFileSync, writeFileSync } from 'node:fs';
 
 // 팩 목록: TCGdex 의 일본어판 팩 번호와 한국어판 이름 (최신 팩이 위).
 // official 을 적으면 TCGdex 의 정규 수록 수 대신 그 값을 쓴다.
+// lang: 'en' = 일본어판 자료가 없어 영어판 팩(TCGdex 영어판 번호)으로 만든다. noStock = 편의점 재고 조회에서 뺀다.
+// img = 한국어판 팩 그림(https://data1.pokemonkorea.co.kr/ 뒤의 주소)
 const PACKS = [
-  { id: 'M6', name: '스톰에메랄다' },
-  { id: 'M5', name: '어비스아이' },
-  { id: 'M4', name: '닌자스피너' },
-  { id: 'M3', name: '니힐제로' },
-  { id: 'M2a', name: 'MEGA 드림 ex' },
-  { id: 'M2', name: '인페르노X' },
-  { id: 'M1L', name: '메가브레이브' },
-  { id: 'M1S', name: '메가심포니아' },
-  { id: 'SV11B', name: '블랙볼트', official: 86 }, // TCGdex 에 정규 수록 수가 174로 잘못 적혀 있어 직접 적는다
-  { id: 'SV11W', name: '화이트플레어' },
-  { id: 'SV10', name: '로켓단의 영광' },
-  { id: 'SV9a', name: '열풍의 아레나' },
-  { id: 'SV9', name: '배틀파트너즈' },
-  { id: 'SV8a', name: '테라스탈 페스타 ex' },
-  { id: 'SV8', name: '초전브레이커' },
+  { id: '30th', lang: 'en', name: '포켓몬 30주년', noStock: true, img: '2026/09/2026-09-11_17-10-49-40643-1789114249.png' }, // 편의점에서 팔지 않아 재고 조회 제외(사용자 요청)
+  { id: 'M6', name: '스톰에메랄다', img: '2026/08/2026-08-11_14-11-21-60448-1786425081.png' },
+  { id: 'M5', name: '어비스아이', img: '2026/06/2026-06-04_13-37-18-11403-1780547838.png' },
+  { id: 'M4', name: '닌자스피너', img: '2026/04/2026-04-03_16-28-57-18746-1775201337.png' },
+  { id: 'M3', name: '니힐제로', img: '2026/02/2026-02-19_10-47-15-17514-1771465635.png' },
+  { id: 'M2a', name: 'MEGA 드림 ex', img: '2025/12/2025-12-30_11-00-50-12772-1767060050.png' },
+  { id: 'M2', name: '인페르노X', img: '2025/11/2025-11-05_14-18-14-89295-1762319894.png' },
+  { id: 'M1L', name: '메가브레이브', img: '2025/09/2025-09-04_19-10-23-72498-1756980623.png' },
+  { id: 'M1S', name: '메가심포니아', img: '2025/09/2025-09-04_19-09-25-19256-1756980565.png' },
+  { id: 'SV11B', name: '블랙볼트', official: 86, img: '2025/07/2025-07-10_16-51-13-13534-1752133873.png' }, // TCGdex 에 정규 수록 수가 174로 잘못 적혀 있어 직접 적는다
+  { id: 'SV11W', name: '화이트플레어', img: '2025/07/2025-07-10_16-51-40-50682-1752133900.png' },
+  { id: 'SV10', name: '로켓단의 영광', img: '2025/05/2025-05-28_17-24-50-69720-1748420690.png' },
+  { id: 'SV9a', name: '열풍의 아레나', img: '2025/04/2025-04-16_17-03-55-83045-1744790635.png' },
+  { id: 'SV9', name: '배틀파트너즈', img: '2025/02/2025-02-19_14-48-06-72993-1739944086.png' },
+  { id: 'SV8a', name: '테라스탈 페스타 ex', img: '2025/01/2025-01-06_10-32-05-76621-1736127125.png' },
+  { id: 'SV8', name: '초전브레이커', img: '2024/11/2024-11-08_18-12-04-80523-1731057124.png' },
 ];
+// cards.json 에 함께 적는 팩 정보(카드를 다시 읽지 않아도 바뀌는 것)
+const packMeta = pack => ({ lang: pack.lang || 'ja', noStock: !!pack.noStock, packImage: pack.img ? 'https://data1.pokemonkorea.co.kr/' + pack.img : null });
 
 // 일본어판 팩 → 같은 카드가 들어 있는 영어판 팩(TCGdex 번호). 앞에 적은 팩부터 찾는다.
 // 영어판은 일본어판 두 팩을 하나로 묶어 내기도 해서(예: 메가브레이브+메가심포니아 → Mega Evolution) 여러 팩이 같은 곳을 가리킨다.
@@ -40,6 +47,7 @@ const EN_SETS = {
 // 힛카드 = 팩에서 가장 드문 등급(SAR 이상)으로 정했다.
 const RARITY = {
   'Special illustration rare': ['SAR', '스페셜 아트 레어', true],
+  'Futuristic Rare': ['FR', '퓨처리스틱 레어', true], // 30주년 팩의 가장 높은 등급
   'Hyper rare': ['UR', '울트라 레어', true],
   'Mega Hyper Rare': ['MUR', '메가 울트라 레어', true],
   'Black White Rare': ['BWR', '블랙 화이트 레어', true],
@@ -74,14 +82,14 @@ async function getJson(url, retry = true) {
   }
 }
 
-// 포켓몬 번호 → { ko: 한국어 이름, ja: 일본어 이름 }. 같은 포켓몬은 한 번만 물어본다.
+// 포켓몬 번호(또는 영어 이름) → { ko: 한국어 이름, ja: 일본어 이름, en: 영어 이름 }. 같은 포켓몬은 한 번만 물어본다.
 const speciesCache = new Map();
 async function species(dexId) {
   if (!speciesCache.has(dexId)) {
     try {
       const d = await getJson(`https://pokeapi.co/api/v2/pokemon-species/${dexId}`);
       const pick = lang => (d.names.find(n => n.language.name === lang) || {}).name;
-      speciesCache.set(dexId, { ko: pick('ko'), ja: pick('ja-Hrkt') || pick('ja') });
+      speciesCache.set(dexId, { ko: pick('ko'), ja: pick('ja-Hrkt') || pick('ja'), en: pick('en') });
     } catch (e) { speciesCache.set(dexId, {}); }
   }
   return speciesCache.get(dexId);
@@ -99,6 +107,18 @@ console.assert(koreanName('ロケット団のミュウツーex', { ko: '뮤츠',
 console.assert(koreanName('メガスターミーex', { ko: '아쿠스타', ja: 'スターミー' }) === '메가아쿠스타 ex', 'koreanName: 메가 ex');
 console.assert(koreanName('ニャースex', { ko: '나옹', ja: 'ニャース' }) === '나옹 ex', 'koreanName: ex');
 console.assert(koreanName('リーリエのピッピex', { ko: '삐삐', ja: 'ピッピ' }) === null, 'koreanName: 복잡한 이름은 바꾸지 않는다');
+
+// 영어 카드 이름을 한국어로 바꾼다: "(지역 이름) + (Mega) + 포켓몬 이름 + (ex)" 모양일 때만. 영어판 자료에는 포켓몬 번호가 없어 이름으로 찾는다.
+const REGION_KO = { Alolan: '알로라 ', Galarian: '가라르 ', Hisuian: '히스이 ', Paldean: '팔데아 ' };
+const EN_NAME = /^(Alolan |Galarian |Hisuian |Paldean )?(Mega )?(.+?)( ex)?$/;
+const slug = name => name.toLowerCase().replace(/[.'’]/g, '').replace(/\s+/g, '-'); // PokeAPI 주소용: "Mr. Mime" → "mr-mime"
+async function koreanNameEn(enName) {
+  const m = enName.match(EN_NAME);
+  const sp = await species(slug(m[3]));
+  if (!sp.ko || sp.en !== m[3]) return { name: null, species: null };
+  return { name: (m[1] ? REGION_KO[m[1].trim()] : '') + (m[2] ? '메가' : '') + sp.ko + (m[4] ? ' ex' : ''), species: sp.ko };
+}
+console.assert(slug('Kommo-o') === 'kommo-o' && slug('Mr. Mime') === 'mr-mime', 'slug');
 
 // 영어판 팩의 시크릿 카드 정보(그린 사람·포켓몬·등급·그림 주소). 같은 팩은 한 번만 읽는다.
 const enCache = new Map();
@@ -136,9 +156,19 @@ console.assert(!sameArt({ illustrator: '', category: 'Trainer', dexId: [], rarit
 
 const unknownRarity = new Set();
 const packs = [];
+const OUT = new URL('./cards.json', import.meta.url);
+// 팩 번호를 적어 실행하면 그 팩만 다시 만든다. 나머지 팩은 지금 파일의 카드 목록을 그대로 쓰고 팩 정보만 새로 적는다
+const only = process.argv.slice(2);
+const before = only.length ? JSON.parse(readFileSync(OUT, 'utf8')).packs : [];
 for (const pack of PACKS) {
+  if (only.length && !only.includes(pack.id)) {
+    const prev = before.find(p => p.id === pack.id);
+    if (prev) packs.push({ ...prev, ...packMeta(pack) });
+    continue;
+  }
+  const lang = pack.lang || 'ja';
   let set;
-  try { set = await getJson(`https://api.tcgdex.net/v2/ja/sets/${pack.id}`); }
+  try { set = await getJson(`https://api.tcgdex.net/v2/${lang}/sets/${pack.id}`); }
   catch (e) { log(`${pack.name}(${pack.id}) 팩 정보 실패: ${e.message}`); continue; }
   const official = pack.official || set.cardCount.official;
   // 시크릿 카드 = 카드 번호가 정규 수록 수보다 큰 카드 (예: 111/080). 높은 등급은 모두 여기에 있다.
@@ -146,23 +176,29 @@ for (const pack of PACKS) {
   const cards = [];
   for (const brief of secrets) {
     let c;
-    try { c = await getJson(`https://api.tcgdex.net/v2/ja/cards/${brief.id}`); }
+    try { c = await getJson(`https://api.tcgdex.net/v2/${lang}/cards/${brief.id}`); }
     catch (e) { log(`${pack.name} ${brief.localId}번 실패: ${e.message}`); continue; }
     let [code, rarityName, hit] = RARITY[c.rarity] || ['?', '등급 자료 없음', false];
     if (!RARITY[c.rarity]) unknownRarity.add(String(c.rarity));
     // 스칼렛·바이올렛 시리즈(SV)의 금색 카드는 UR 이다. TCGdex 는 MEGA 시리즈와 같은 이름으로 적어 두었다.
     if (code === 'MUR' && pack.id.startsWith('SV')) [code, rarityName] = ['UR', '울트라 레어'];
-    const sp = c.category === 'Pokemon' && c.dexId && c.dexId.length === 1 ? await species(c.dexId[0]) : null;
+    // 한국어 이름: 일본어판은 포켓몬 번호로, 영어판은 영어 이름으로 찾는다
+    let ko = { name: null, species: null };
+    if (lang === 'en') { if (c.category === 'Pokemon') ko = await koreanNameEn(c.name); }
+    else if (c.category === 'Pokemon' && c.dexId && c.dexId.length === 1) {
+      const sp = await species(c.dexId[0]);
+      ko = { name: koreanName(c.name, sp), species: sp.ko || null };
+    }
     cards.push({
       no: `${c.localId}/${String(official).padStart(3, '0')}`,
-      name: koreanName(c.name, sp) || c.name, // 한국어로 바꾸지 못하면 일본어 이름 그대로
-      jpName: c.name,
-      species: sp && sp.ko ? sp.ko : null,     // 어떤 포켓몬인지(한국어). 트레이너 카드는 없다
+      name: ko.name || c.name, // 한국어로 바꾸지 못하면 원래(일본어·영어) 이름 그대로
+      jpName: c.name,          // 원래 이름(영어판 팩이면 영어 이름)
+      species: ko.species,     // 어떤 포켓몬인지(한국어). 트레이너 카드는 없다
       rarity: code,
       rarityName,
       hit,
       image: brief.image || null,             // 그림 주소(없으면 null). 뒤에 /low.webp 또는 /high.webp 를 붙여 쓴다
-      imageLang: brief.image ? 'ja' : null,   // 그림이 어느 나라 판인지
+      imageLang: brief.image ? lang : null,   // 그림이 어느 나라 판인지
       // 아래 셋은 영어판 그림을 찾는 데만 쓰고 저장하지 않는다
       _art: { illustrator: c.illustrator, category: c.category, dexId: c.dexId || [], rarity: c.rarity },
     });
@@ -180,7 +216,7 @@ for (const pack of PACKS) {
     }
   }
   for (const card of cards) delete card._art;
-  packs.push({ id: pack.id, name: pack.name, jpName: set.name, releaseDate: set.releaseDate, official, total: set.cardCount.total, cards });
+  packs.push({ id: pack.id, name: pack.name, jpName: set.name, releaseDate: set.releaseDate, official, total: set.cardCount.total, ...packMeta(pack), cards });
   const hits = cards.filter(c => c.hit);
   log(`${pack.name}: 시크릿 ${cards.length}장(그림 ${cards.filter(c => c.image).length}장, 영어판 ${cards.filter(c => c.imageLang === 'en').length}장), 힛카드 ${hits.length}장(그림 ${hits.filter(c => c.image).length}장)`);
 }
@@ -188,9 +224,9 @@ for (const pack of PACKS) {
 // 점검: 힛카드를 가려내지 못한 팩을 알려 준다(공개 자료에 등급이 없는 팩)
 for (const p of packs) if (!p.cards.some(c => c.hit)) log(`${p.name}: 등급 자료가 없어 힛카드를 가려내지 못함 (시크릿 ${p.cards.length}장)`);
 
-writeFileSync(new URL('./cards.json', import.meta.url), JSON.stringify({
+writeFileSync(OUT, JSON.stringify({
   builtAt: new Date().toLocaleString('sv-SE').replace(' ', 'T'),
-  source: 'TCGdex(일본어판 카드 자료, 일본어판·영어판 카드 그림) · PokeAPI(한국어 포켓몬 이름)',
+  source: 'TCGdex(일본어판·영어판 카드 자료와 카드 그림) · PokeAPI(한국어 포켓몬 이름) · 포켓몬코리아(팩 그림)',
   packs,
 }));
 if (unknownRarity.size) log(`등급 표에 없는 표기: ${[...unknownRarity].join(' / ')}`);

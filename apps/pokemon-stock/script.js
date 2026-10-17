@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '25';
+const VERSION = '26';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -204,6 +204,8 @@ function updateEstimate() {
 
   if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · 내 위치 10km 안의 판매처를 찾습니다(조회 최대 16회). 상품 칸이 비어 있으면 포켓몬카드로 찾고, 포켓몬 카드를 찾을 때는 무인문구점도 함께 찾습니다. 편의점 선택은 잠깁니다.'; return; }
   if (chains.length === 0 || regions.length === 0) { $('estimate').textContent = '네이버 지도, 또는 편의점과 권역을 체크하세요.'; return; }
+  const noStock = $('pick-mode').checked && checkedPacks().find(p => p.noStock);
+  if (noStock) { $('estimate').textContent = `${noStock.name} 팩은 편의점 재고 조회에서 뺀 팩입니다. [카드 조회]로 힛카드만 볼 수 있습니다.`; return; }
   const stores = regions.reduce((sum, r) => sum + storesIn(r), 0);
   const words = $('pick-mode').checked ? Math.max(1, checkedPacks().length) : 1; // 조회할 검색어 수(고른 팩 수)
   const calls = buildTasks(regions, chains).length * words;
@@ -525,6 +527,7 @@ $('load-btn').addEventListener('click', async () => {
   if (picking) {
     const packs = checkedPacks();
     if (packs.length === 0) { $('status').textContent = '조회할 팩을 하나 선택하세요.'; return; }
+    if (packs[0].noStock) { $('status').textContent = `${packs[0].name} 팩은 편의점 재고 조회에서 뺀 팩입니다. [카드 조회]로 힛카드를 볼 수 있습니다.`; return; }
     await runStores(packs.map(p => p.name));
   } else {
     if (!keyword) { $('status').textContent = '조회할 상품을 입력하세요.'; $('keyword').focus(); return; }
@@ -541,7 +544,7 @@ $('batch-btn').addEventListener('click', async () => {
 
   const chains = checkedChains();                    // 체크한 편의점
   const regions = checkedRegions();                  // 체크한 권역
-  const keywords = cardData.packs.map(p => p.name);  // 팩 목록 전체
+  const keywords = cardData.packs.filter(p => !p.noStock).map(p => p.name);  // 팩 목록 전체(편의점에서 팔지 않아 재고 조회에서 뺀 팩은 제외)
   if (chains.length === 0 || regions.length === 0) { $('status').textContent = '일괄 조회할 편의점과 권역을 하나 이상 체크하세요.'; return; }
   const calls = buildTasks(regions, chains).length * keywords.length;
   const minutes = Math.ceil(calls * 1.4 / PARALLEL / 60);
@@ -769,7 +772,7 @@ const cardTitle = c => c.name === c.jpName && c.species ? `${c.jpName} (${c.spec
 function cardChip(c) {
   const li = el('li');
   li.append(el('strong', cardTitle(c)), el('span', `${c.no} · ${c.rarity}`));
-  li.title = `${c.rarityName} · 일본어판 이름: ${c.jpName}`; // 마우스를 올리면 나오는 설명
+  li.title = `${c.rarityName} · 원래 이름: ${c.jpName}`; // 마우스를 올리면 나오는 설명
   return li;
 }
 
@@ -805,6 +808,26 @@ function cardList(cards, wrap) {
   return list;
 }
 
+// 실제 팩 그림(포켓몬코리아 공식 사이트의 한국어판 팩 그림). 다 불러오면 holder 에 has-img 를 붙여
+// 직접 그린 팩·박스 모양 대신 그림이 보이게 하고, 못 불러오면 그림을 지워 직접 그린 모양을 그대로 둔다.
+function packArt(pack, holder) {
+  const img = el('img', '', 'pack-img');
+  img.alt = holder.classList.contains('box-art') ? '' : `${pack.name} 팩`; // 박스 그림은 꾸밈이라 설명을 비운다
+  img.addEventListener('load', () => holder.classList.add('has-img'));
+  img.addEventListener('error', () => img.remove());
+  img.src = pack.packImage;
+  return img;
+}
+
+// 부채꼴의 카드 한 자리(slot). 기울기·겹침·마우스 반응은 움직이지 않는 자리가 맡고, 마우스를 올렸을 때 뜨는 것은 안쪽 카드뿐이다.
+// (카드 자체가 움직이면 두 카드 경계에서 마우스가 옆 카드로 넘어갔다 돌아오기를 반복해 카드가 떨린다)
+function fanSlot(card, i) {
+  const slot = el('div', '', 'slot');
+  slot.style.setProperty('--i', i); // 몇 번째 카드인지. CSS 가 기울기를 계산한다
+  slot.append(card);
+  return slot;
+}
+
 // 팩 하나의 화면: 팩 → [팩 열기] → 카드가 부채꼴로 펼쳐짐 → [다시 보기], 그 아래에 카드 목록
 function packPanel(pack) {
   const hits = pack.cards.filter(c => c.hit);
@@ -815,10 +838,24 @@ function packPanel(pack) {
   const box = el('article', '', 'pack');
   box.style.setProperty('--c', packColor(pack.id)); // 이 팩의 색. CSS 가 팩 모양과 카드 뒤 배경에 쓴다
   box.append(el('h3', pack.name));
-  box.append(el('p', `일본어판 이름 ${pack.jpName} · ${pack.releaseDate} 발매 · 정규 카드 ${pack.official}장 · ${hits.length ? `힛카드 ${hits.length}장` : '등급 자료 없음'}`, 'pack-meta'));
+  box.append(el('p', `${pack.lang === 'en' ? '영어판' : '일본어판'} 이름 ${pack.jpName} · ${pack.releaseDate} 발매 · 정규 카드 ${pack.official}장 · ${hits.length ? `힛카드 ${hits.length}장` : '등급 자료 없음'}`
+    + (pack.noStock ? ' · 편의점 재고 조회 제외' : ''), 'pack-meta'));
+
+  // 팩 뒤에 놓는 박스 모양(직접 그린 것). 팩을 열면 팩과 함께 사라진다
+  const boxArt = el('div', '', 'box-art');
+  boxArt.setAttribute('aria-hidden', 'true');
+  boxArt.append(el('span', 'BOOSTER BOX'), el('strong', pack.name), el('span', '30팩'));
+  if (pack.packImage) boxArt.prepend(packArt(pack, boxArt)); // 박스 앞면에도 같은 팩 그림을 입힌다(실제 박스 사진은 공식 사이트에 없다)
 
   if (featured.length === 0) {
-    // 등급 자료도 그림도 없는 팩: 힛카드를 가려낼 수 없으니 시크릿 카드를 번호순으로 모두 보여 준다
+    // 등급 자료도 그림도 없는 팩: 펼칠 카드가 없으니 팩과 박스 그림만 보여 주고(누를 수 없음), 시크릿 카드를 번호순으로 모두 보여 준다
+    if (pack.packImage) {
+      const still = el('div', '', 'pack-cover');
+      still.append(el('span', '포켓몬 카드 게임'), el('strong', pack.name), packArt(pack, still));
+      const stage = el('div', '', 'stage still');
+      stage.append(boxArt, still);
+      box.append(stage);
+    }
     box.append(el('p', `이 팩은 공개 자료에 등급 정보가 없어 힛카드를 가려내지 못했습니다. 시크릿 카드 ${others.length}장을 번호순으로 보여 줍니다(힛카드는 보통 번호가 큰 쪽에 있습니다).`, 'pack-meta'));
     box.append(cardList(others, true));
     return box;
@@ -829,25 +866,21 @@ function packPanel(pack) {
   const cover = el('button', '', 'pack-cover'); // 닫혀 있는 팩
   cover.type = 'button';
   cover.append(el('span', '포켓몬 카드 게임'), el('strong', pack.name), el('span', '팩 열기', 'open'));
+  if (pack.packImage) cover.prepend(packArt(pack, cover)); // 실제 팩 그림이 있으면 그림으로 덮는다
   const fan = el('div', '', 'fan');             // 펼쳐진 카드들
   fan.hidden = true;
   fan.style.setProperty('--n', featured.length); // CSS 가 카드 수(--n)와 순서(--i)로 기울기를 계산한다
   featured.forEach((c, i) => {
     const card = el('div', '', c.image ? 'tcg art' : 'tcg r-' + c.rarity.replace(/[^A-Za-z]/g, ''));
-    card.style.setProperty('--i', i);
     if (c.image) card.append(cardImage(c)); // 그림이 있으면 그림으로
     else card.append(el('span', c.rarity, 'rarity'), el('strong', cardTitle(c)), el('span', c.no, 'no')); // 없으면 글자 카드로
-    fan.append(card);
+    fan.append(fanSlot(card, i));
   });
   const again = el('button', '다시 보기', 'again');
   again.type = 'button';
   again.hidden = true;
   cover.addEventListener('click', () => { cover.hidden = true; boxArt.hidden = true; fan.hidden = false; again.hidden = false; again.focus(); });
   again.addEventListener('click', () => { fan.hidden = true; again.hidden = true; cover.hidden = false; boxArt.hidden = false; cover.focus(); });
-  // 팩 뒤에 놓는 박스 모양(직접 그린 것). 팩을 열면 팩과 함께 사라진다
-  const boxArt = el('div', '', 'box-art');
-  boxArt.setAttribute('aria-hidden', 'true');
-  boxArt.append(el('span', 'BOOSTER BOX'), el('strong', pack.name), el('span', '30팩'));
   stage.append(boxArt, cover, fan);
   box.append(stage, again);
 
@@ -868,9 +901,8 @@ function renderHero() {
   fan.style.setProperty('--n', picked.length);
   picked.forEach((c, i) => {
     const card = el('div', '', 'tcg art');
-    card.style.setProperty('--i', i);
     card.append(cardImage(c));
-    fan.append(card);
+    fan.append(fanSlot(card, i));
   });
   if (picked.length) $('hero-cards').append(fan);
 }
