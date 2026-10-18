@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '27';
+const VERSION = '30';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -490,6 +490,7 @@ async function runStores(keywords, batch = null) {
   chainFilter = null;
   $('scope').textContent = '조회 중입니다. 결과가 나오는 대로 아래에 채워집니다. ' + scope;
   showMain('result');
+  toResult();
   startDeal();
   await queryLive(regions, chains, keywords, batch); // result.batch = 일괄 조회 결과인가 (화면을 조금 다르게 그린다)
   stopDeal();
@@ -506,12 +507,22 @@ async function runStores(keywords, batch = null) {
   $('scope').textContent = (result.stopped ? '중간에 멈춘 결과입니다. ' : '') + scope;
   renderSummary();
   renderList();
+  if (resetAfterStop) { resetAfterStop = false; $('batch-btn').textContent = '일괄 조회'; $('reset-btn').click(); } // 조회 중에 [초기화]를 눌렀으면
 }
 
 // 메인 영역에는 결과 한 가지만 보인다: 'empty'(안내) / 'result'(편의점) / 'places'(네이버 지도) / 'cards'(힛카드)
 function showMain(which) {
   for (const id of ['empty', 'result', 'places', 'cards']) $(id).hidden = id !== which;
+  document.body.classList.toggle('has-result', which !== 'empty'); // 휴대폰의 [조건 ↑] [결과 ↓] 버튼을 보이게 한다
+  $('board').hidden = which !== 'empty' || !boardReady; // 소식 게시판은 첫 화면에서만
 }
+
+// 휴대폰(한 열 화면)에서는 결과가 사이드바 아래에 있어서, 조회를 시작하면 결과 쪽으로 내려 준다
+const narrow = matchMedia('(max-width: 700px)');
+const toResult = () => { if (narrow.matches) $('main-area').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+// [조건 ↑] = 사이드바 맨 위로, [결과 ↓] = 지금 보이는 결과로
+$('jump-up').addEventListener('click', () => document.querySelector('header').scrollIntoView({ behavior: 'smooth' }));
+$('jump-down').addEventListener('click', () => $('main-area').scrollIntoView({ behavior: 'smooth' }));
 
 // [재고 조회] 버튼: 네이버 지도가 체크돼 있으면 주변 판매처 찾기, 아니면 편의점 재고 조회
 $('load-btn').addEventListener('click', async () => {
@@ -637,7 +648,9 @@ async function runPlaces(keyword) {
     : failedCalls === searches.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16);
   showMain('places');
+  toResult();
   renderPlaces(list, words, areas);
+  if (resetAfterStop) { resetAfterStop = false; $('reset-btn').click(); } // 찾는 중에 [초기화]를 눌렀으면
 }
 
 // 주변 판매처를 지도와 목록으로 그린다
@@ -705,7 +718,10 @@ function applyMode() {
 $('naver-mode').addEventListener('change', applyMode);
 
 // [초기화] 버튼: 모든 선택을 풀고, 검색어는 기본값으로, 결과 화면은 처음 상태로 되돌린다
+// [초기화](집 모양): 모든 선택을 풀고 처음 화면 맨 위로 돌아간다. 조회 중이면 조회를 멈춘 뒤 초기화한다
+let resetAfterStop = false;
 $('reset-btn').addEventListener('click', () => {
+  if ($('load-btn').disabled) { stopRequested = true; resetAfterStop = true; $('status').textContent = '조회를 멈춘 뒤 처음 화면으로 돌아갑니다.'; return; }
   for (const input of document.querySelectorAll('#naver-mode, #pick-mode, #packs input, #chains input, #regions input')) input.checked = false;
   localStorage.removeItem('pokemon-stock-packs');
   for (const c of CHAINS) chainTouched.add(c.id); // 초기화한 뒤에는 연결 상태가 체크를 되돌리지 않게 한다
@@ -716,9 +732,15 @@ $('reset-btn').addEventListener('click', () => {
   chainFilter = null;
   $('status').textContent = '';
   $('fetched-at').textContent = '';
+  $('card-search').value = '';
+  $('card-results').replaceChildren();
+  $('cards-list').replaceChildren();
+  if (cardDialog && cardDialog.open) cardDialog.close();
   showMain('empty');
   applyPick();
   applyMode();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.querySelector('header').scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 // ---------- 5-5. 팩 선택하기와 힛카드 ----------
@@ -772,10 +794,20 @@ const cardTitle = c => c.name === c.jpName && c.species ? `${c.jpName} (${c.spec
 function cardChip(c) {
   const li = el('li');
   const btn = pickButton(c, 'chip-pick');
-  btn.append(el('strong', cardTitle(c)), el('span', `${c.no} · ${c.rarity}`));
+  btn.append(el('strong', cardTitle(c)), cardMeta(c));
   btn.title = `${c.rarityName} · 원래 이름: ${c.jpName}`; // 마우스를 올리면 나오는 설명
   li.append(btn);
   return li;
+}
+
+// 등급 배지: SAR 금색, SR 은색, AR 하늘색 등 등급마다 색이 다르다(색은 style.css 의 .rb-○○). 등급을 모르면 없음
+const rarityBadge = r => r && r !== '?' ? el('b', r, 'rb rb-' + r) : null;
+// 번호와 등급 배지: "092/063 [MUR]"
+function cardMeta(c) {
+  const meta = el('span', c.no);
+  const badge = rarityBadge(c.rarity);
+  if (badge) meta.append(' ', badge);
+  return meta;
 }
 
 // 누르면 카드 창(큰 그림 + 시세)을 여는 버튼
@@ -804,7 +836,7 @@ function cardFigure(c) {
   const li = el('li');
   const btn = pickButton(c, 'card-pick');
   btn.append(cardImage(c));
-  li.append(btn, el('strong', cardTitle(c)), el('span', (c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`) + (c.imageLang === 'en' ? ' · 영어판 그림' : '')));
+  li.append(btn, el('strong', cardTitle(c)), cardMeta(c));
   return li;
 }
 
@@ -813,7 +845,7 @@ function cardBlank(c) {
   const li = el('li');
   const btn = pickButton(c, 'card-pick');
   btn.append(el('span', '그림 없음', 'blank'));
-  li.append(btn, el('strong', cardTitle(c)), el('span', c.rarity === '?' ? c.no : `${c.no} · ${c.rarity}`));
+  li.append(btn, el('strong', cardTitle(c)), cardMeta(c));
   return li;
 }
 
@@ -865,8 +897,8 @@ function renderPrice(box, p, fx) {
   const money = n => n == null ? '-' : fx ? won(n * fx.rate) : orig(n); // 환율이 있으면 원화로
   box.replaceChildren(
     el('strong', `${LANG_NAME[p.lang]} 카드 시세`),
-    el('span', (fx ? '약 ' : '') + money(p.avg), 'price-big'),
-    el('small', `평균 거래가${fx ? ` (${orig(p.avg)})` : ''}`),
+    (() => { const big = el('span', (fx ? '약 ' : '') + money(p.avg), 'price-big'); const t = trendBadge(p); if (t) big.append(' ', t); return big; })(),
+    el('small', `평균 거래가${fx ? ` (${orig(p.avg)})` : ''}` + (trendOf(p) != null ? ' · ▲▼ = 최근 7일 평균을 30일 평균과 비교' : '')),
     el('span', `최저가 ${money(p.low)} · 추세 ${money(p.trend)} · 7일 평균 ${money(p.avg7)} · 30일 평균 ${money(p.avg30)}`),
     el('small', (fx ? `환율 1${unit === 'EUR' ? '유로' : unit} = ${fx.rate.toLocaleString('ko-KR')}원 (${fx.date} 유럽중앙은행 기준). ` : '원화 환율을 받지 못해 원래 화폐로 보여 줍니다. ')
       + `${String(p.updated).slice(0, 10)} 기준 Cardmarket(유럽 카드 거래 사이트) 거래가이며, 한국 시세와는 다를 수 있습니다.`),
@@ -889,7 +921,7 @@ function openCard(c) {
   const price = el('div', '시세를 불러오는 중…', 'price');
   price.setAttribute('aria-live', 'polite');
   const info = el('div', '', 'card-info');
-  info.append(el('h3', cardTitle(c)), el('p', `${c.no} · ${c.rarityName}` + (c.imageLang === 'en' ? ' · 영어판 그림' : ''), 'pack-meta'), price);
+  info.append(el('h3', cardTitle(c)), (() => { const p = el('p', `${c.no} `, 'pack-meta'); const b = rarityBadge(c.rarity); if (b) p.append(b, ' '); p.append(c.rarityName); return p; })(), price);
   if (c.image) {
     const link = el('a', '큰 그림 새 탭에서 보기');
     link.href = c.image + '/high.webp';
@@ -904,19 +936,111 @@ function openCard(c) {
 }
 
 // 팩의 전체 카드(일반 + 시크릿)를 번호순으로. 접혀 있다가 처음 펼칠 때 만든다(카드가 많아서)
+// [번호순] [시세순]: 시세순을 처음 누르면 팩의 모든 카드 시세를 불러온 뒤(3장씩 동시에) 비싼 순으로 다시 놓는다.
+// 시세를 불러온 뒤에는 어느 순서로 보든 카드마다 원화 시세를 적는다.
 function allCards(pack) {
   const all = (pack.regular || []).concat(pack.cards);
   if (!pack.regular || !pack.regular.length) return null; // 예전 형식의 자료에는 일반 카드가 없다
   const pictured = all.filter(c => c.image).length;
   const whole = el('details', '', 'all-cards');
   whole.append(el('summary', `이 팩의 전체 카드 ${all.length}장 보기 (그림 ${pictured}장${pictured < all.length ? `, 그림 없음 ${all.length - pictured}장` : ''})`));
+  let prices = null; // 카드 → 시세(불러온 뒤)
+  let fx = null;
+  const list = el('ul', '', 'gallery');
+  const draw = order => list.replaceChildren(...order.map(c => withPrice(c.image ? cardFigure(c) : cardBlank(c), prices && prices.get(c), fx)));
+  const byNo = el('button', '번호순', 'sort');
+  const byPrice = el('button', '시세순', 'sort');
+  const note = el('span', `시세순은 카드 ${all.length}장의 시세를 불러옵니다.`, 'sort-note');
+  note.setAttribute('aria-live', 'polite');
+  for (const b of [byNo, byPrice]) b.type = 'button';
+  const press = b => { byNo.setAttribute('aria-pressed', String(b === byNo)); byPrice.setAttribute('aria-pressed', String(b === byPrice)); };
+  byNo.addEventListener('click', () => { press(byNo); draw(all); });
+  byPrice.addEventListener('click', async () => {
+    if (!prices) {
+      byNo.disabled = byPrice.disabled = true;
+      prices = await pricesOf(all, done => { note.textContent = `시세 불러오는 중 ${done}/${all.length}`; });
+      fx = await krwRate('EUR');
+      byNo.disabled = byPrice.disabled = false;
+      note.textContent = `시세가 있는 카드 ${[...prices.values()].filter(Boolean).length}/${all.length}장 · 시세가 없는 카드는 맨 뒤`;
+    }
+    press(byPrice);
+    // 비싼 순. 시세가 없는 카드는 번호순 그대로 맨 뒤에
+    draw([...all].sort((a, b) => ((prices.get(b) || {}).avg ?? -1) - ((prices.get(a) || {}).avg ?? -1)));
+  });
   whole.addEventListener('toggle', () => {
     if (!whole.open || whole.children.length > 1) return;
-    const list = el('ul', '', 'gallery');
-    list.append(...all.map(c => c.image ? cardFigure(c) : cardBlank(c)));
-    whole.append(list);
+    const bar = el('div', '', 'sort-bar');
+    bar.append(byNo, byPrice, note);
+    press(byNo);
+    draw(all);
+    whole.append(bar, list);
+    addFold(whole); // 카드가 많아 맨 아래에서도 접을 수 있게
   });
   return whole;
+}
+
+// 여러 카드의 시세를 3장씩 동시에 불러온다. onEach(끝난 장수)로 진행을 알린다. 결과: 카드 → 시세(없으면 null)
+async function pricesOf(cards, onEach) {
+  const out = new Map();
+  let done = 0;
+  await pool(cards, async c => { out.set(c, await cardPrice(c)); if (onEach) onEach(++done); });
+  return out;
+}
+
+// 시세 하나를 짧은 글자로: 환율이 있으면 원화, 없으면 원래 화폐
+const priceText = (p, fx) => fx ? won(p.avg * fx.rate) : '€' + Number(p.avg).toFixed(2);
+
+// 최근 오름·내림: 7일 평균을 30일 평균과 비교한 %. 30일 평균이 없으면 null
+const trendOf = p => p && p.avg7 && p.avg30 ? (p.avg7 - p.avg30) / p.avg30 * 100 : null;
+console.assert(trendOf({ avg7: 110, avg30: 100 }) === 10 && trendOf({ avg7: 5 }) === null, 'trendOf');
+// ▲12%(빨강) / ▼5%(파랑) / 보합(±3% 안). 없으면 null
+function trendBadge(p) {
+  const t = trendOf(p);
+  if (t == null) return null;
+  if (Math.abs(t) < 3) return el('small', '보합', 'trend flat');
+  return el('small', `${t > 0 ? '▲' : '▼'}${Math.round(Math.abs(t))}%`, t > 0 ? 'trend up' : 'trend down');
+}
+
+// 카드 칸 아래에 시세를 한 줄 덧붙인다(시세를 아직 안 불러왔으면 그대로)
+function withPrice(li, p, fx) {
+  if (p === undefined) return li;
+  if (!p) { li.append(el('small', '시세 없음', 'card-price none')); return li; }
+  const price = el('b', priceText(p, fx), 'card-price');
+  const t = trendBadge(p);
+  if (t) price.prepend(t, ' '); // 시세 왼쪽에 최근 오름·내림
+  li.append(price);
+  return li;
+}
+
+// 팩의 힛카드 시세 요약: 범위·평균과 비싼 카드 TOP 3. 팩 화면이 열릴 때 자동으로 불러온다
+function hitPrices(cards) {
+  const box = el('div', '시세 불러오는 중…', 'hit-prices');
+  box.setAttribute('aria-live', 'polite');
+  (async () => {
+    const prices = await pricesOf(cards);
+    const fx = await krwRate('EUR');
+    const priced = cards.filter(c => prices.get(c)).sort((a, b) => prices.get(b).avg - prices.get(a).avg);
+    if (!priced.length) { box.replaceChildren(el('strong', '힛카드 시세'), el('span', ' 시세 자료가 없습니다.')); return; }
+    const avgs = priced.map(c => prices.get(c).avg);
+    const mean = { avg: avgs.reduce((a, b) => a + b, 0) / avgs.length };
+    const head = el('p');
+    head.append(el('strong', '힛카드 시세 '), el('span', `${priceText({ avg: avgs[avgs.length - 1] }, fx)} ~ ${priceText({ avg: avgs[0] }, fx)} · 평균 ${priceText(mean, fx)}`),
+      el('small', ` (시세 있는 카드 ${priced.length}/${cards.length}장${fx ? `, ${fx.date} 환율` : ''})`));
+    const top = el('ol', '', 'top3');
+    for (const c of priced.slice(0, 3)) {
+      const li = el('li');
+      const btn = pickButton(c, 'card-pick');
+      if (c.image) btn.append(cardImage(c)); else btn.append(el('span', '그림 없음', 'blank'));
+      li.append(btn, el('span', cardTitle(c)), el('b', priceText(prices.get(c), fx)));
+      top.append(li);
+    }
+    // 최근 오른 힛카드: 7일 평균이 30일 평균보다 3% 넘게 오른 카드, 많이 오른 순 3장
+    const rising = priced.filter(c => trendOf(prices.get(c)) >= 3).sort((a, b) => trendOf(prices.get(b)) - trendOf(prices.get(a))).slice(0, 3);
+    const up = el('p', '', 'rising');
+    up.append(el('small', '최근 오른 힛카드 '), ...(rising.length ? rising.flatMap((c, i) => [i ? ' · ' : '', cardTitle(c) + ' ', rarityBadge(c.rarity) || '', ' ', trendBadge(prices.get(c))]) : [el('small', '없음 (최근 7일 평균이 30일 평균보다 3% 넘게 오른 카드)')]));
+    box.replaceChildren(head, el('small', '비싼 카드 TOP 3', 'top3-title'), top, up);
+  })();
+  return box;
 }
 
 // 카드 여러 장을 목록으로: 그림이 있으면 그림 격자, 없으면 글자 칸
@@ -947,6 +1071,66 @@ function fanSlot(card, i) {
   return slot;
 }
 
+// ---------- 가상 개봉(재미용) ----------
+// 실제 확률이 아니라 등급별 대략 확률로 한 팩(5장)을 뽑는다.
+// 1~3번째: 커먼 70% / 언커먼 30%, 4번째: 언커먼, 5번째: 레어 칸(아래 비율, 그 팩에 없는 등급은 빼고 다시 나눈다)
+const RARE_SLOT = [['R', 55], ['RR', 20], ['AR', 15], ['SR', 6], ['SAR', 3], ['TOP', 1]]; // TOP = UR·MUR·BWR·FR·SSR
+const TOP_RARITY = ['UR', 'MUR', 'BWR', 'FR', 'SSR'];
+// 무게(비율)에 따라 하나를 고른다. rng = 0 이상 1 미만의 난수를 주는 함수(점검할 때 바꿔 넣는다)
+function pickWeighted(list, rng = Math.random) {
+  const total = list.reduce((sum, [, w]) => sum + w, 0);
+  let x = rng() * total;
+  for (const [item, w] of list) { if ((x -= w) < 0) return item; }
+  return list[list.length - 1][0];
+}
+console.assert(pickWeighted([['a', 1], ['b', 3]], () => 0.1) === 'a' && pickWeighted([['a', 1], ['b', 3]], () => 0.9) === 'b', 'pickWeighted');
+const pickOne = (arr, rng = Math.random) => arr[Math.floor(rng() * arr.length)];
+
+// 이 팩의 등급별 카드 묶음. 등급 자료가 없거나(힛카드를 모름) 커먼이 없으면(하이클래스팩 등) null
+function simPools(pack) {
+  if (!pack.cards.some(c => c.hit)) return null;
+  const all = (pack.regular || []).concat(pack.cards);
+  const pools = {};
+  for (const c of all) {
+    const key = TOP_RARITY.includes(c.rarity) ? 'TOP' : c.rarity;
+    (pools[key] = pools[key] || []).push(c);
+  }
+  return pools.C ? pools : null;
+}
+function drawPack(pools, rng = Math.random) {
+  const cu = () => pickOne(pools.U && rng() < 0.3 ? pools.U : pools.C, rng);
+  const rare = pickWeighted(RARE_SLOT.filter(([r]) => pools[r]), rng);
+  return [cu(), cu(), cu(), pickOne(pools.U || pools.C, rng), pickOne(pools[rare], rng)];
+}
+
+function simulator(pack) {
+  const wrap = el('div', '', 'sim');
+  const pools = simPools(pack);
+  if (!pools) { wrap.append(el('small', '이 팩은 등급 자료가 없거나 구성이 달라 가상 개봉을 할 수 없습니다.')); return wrap; }
+  const btn = el('button', '가상 개봉', 'sim-btn');
+  btn.type = 'button';
+  const out = el('div', '', 'sim-result');
+  out.setAttribute('aria-live', 'polite');
+  wrap.append(btn, el('small', ' 한 팩(5장)을 무작위로 뽑아 봅니다. 실제 확률이 아닌 재미용 대략 확률입니다.'), out);
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const cards = drawPack(pools);
+    const list = el('ul', '', 'gallery sim-cards');
+    list.append(...cards.map((c, i) => { const li = c.image ? cardFigure(c) : cardBlank(c); li.style.setProperty('--i', i); return li; }));
+    const total = el('p', '시세 합계 불러오는 중…', 'sim-total');
+    out.replaceChildren(list, total);
+    const prices = await pricesOf(cards);
+    const fx = await krwRate('EUR');
+    [...list.children].forEach((li, i) => withPrice(li, prices.get(cards[i]), fx)); // 뒤집힌 카드 아래에 시세를 덧붙인다
+    const priced = cards.filter(c => prices.get(c));
+    const sum = priced.reduce((a, c) => a + prices.get(c).avg, 0);
+    total.replaceChildren(el('strong', `이번 팩 시세 합계 약 ${priceText({ avg: sum }, fx)}`), el('small', ` (시세 있는 카드 ${priced.length}/5장)`));
+    btn.textContent = '한 팩 더';
+    btn.disabled = false;
+  });
+  return wrap;
+}
+
 // 팩 하나의 화면: 팩 → [팩 열기] → 카드가 부채꼴로 펼쳐짐 → [다시 보기], 그 아래에 카드 목록
 function packPanel(pack) {
   const hits = pack.cards.filter(c => c.hit);
@@ -959,6 +1143,7 @@ function packPanel(pack) {
   box.append(el('h3', pack.name));
   box.append(el('p', `${pack.lang === 'en' ? '영어판' : '일본어판'} 이름 ${pack.jpName} · ${pack.releaseDate} 발매 · 정규 카드 ${pack.official}장 · ${hits.length ? `힛카드 ${hits.length}장` : '등급 자료 없음'}`
     + (pack.noStock ? ' · 편의점 재고 조회 제외' : ''), 'pack-meta'));
+  if (featured.length) box.append(hitPrices(featured)); // 힛카드(없으면 펼쳐 보일 카드) 시세 요약
 
   // 팩 뒤에 놓는 박스 모양(직접 그린 것). 팩을 열면 팩과 함께 사라진다
   const boxArt = el('div', '', 'box-art');
@@ -1004,13 +1189,15 @@ function packPanel(pack) {
   again.addEventListener('click', () => { fan.hidden = true; again.hidden = true; cover.hidden = false; boxArt.hidden = false; cover.focus(); });
   stage.append(boxArt, cover, fan);
   box.append(stage, again);
+  const sim = simulator(pack);
+  if (sim) box.append(sim);
 
   box.append(cardList(featured, false));
   if (others.length) {
     // details/summary = 누르면 펼쳐지는 접이식 영역(HTML 기본 기능)
     const more = el('details');
     more.append(el('summary', hits.length ? `그 밖의 높은 등급 카드 ${others.length}장 (AR·SR 등)` : `나머지 시크릿 카드 ${others.length}장`), cardList(others, true));
-    box.append(more);
+    box.append(addFold(more));
   }
   const whole = allCards(pack);
   if (whole) box.append(whole);
@@ -1031,16 +1218,105 @@ function renderHero() {
 }
 
 // [카드 조회] 버튼: "선택하기"에서 고른 팩의 힛카드를 보여 준다
+// 팩을 고르지 않았으면 카드 검색칸만 보여 준다
 $('cards-btn').addEventListener('click', () => {
   if (!cardData) { $('status').textContent = '카드 목록(cards.json)을 불러오지 못했습니다.'; return; }
   const packs = $('pick-mode').checked ? checkedPacks() : [];
-  if (packs.length === 0) { $('status').textContent = '"선택하기"를 체크하고 팩을 하나 고른 뒤 [카드 조회]를 누르세요.'; return; }
   $('status').textContent = '';
-  $('cards-title').textContent = `힛카드 · ${packs.map(p => p.name).join(', ')}`;
-  $('cards-list').replaceChildren(...packs.map(packPanel));
+  $('cards-title').textContent = packs.length ? `힛카드 · ${packs.map(p => p.name).join(', ')}` : '카드 검색';
+  $('cards-list').replaceChildren(...(packs.length ? packs.map(packPanel)
+    : [el('p', '"선택하기"에서 팩을 고르고 [카드 조회]를 누르면 그 팩의 힛카드가 펼쳐집니다. 위 검색칸에서는 모든 팩의 카드를 이름으로 찾을 수 있습니다.', 'pack-meta')]));
+  if (!packs.length) $('card-search').focus();
   showMain('cards');
   $('cards').scrollIntoView({ behavior: 'smooth', block: 'start' }); // 휴대폰에서는 결과가 아래에 있어서 그쪽으로 내려 준다
 });
+
+// 카드 검색: 16개 팩 전체에서 한국어 이름·원래 이름·포켓몬 이름으로 찾는다(띄어쓰기·대소문자 무시, 서버 호출 없음)
+const MAX_FOUND = 200; // shortcut: 결과는 앞 200장까지만 그린다, 더 필요하면 "더 보기" 추가
+$('card-search').addEventListener('input', () => {
+  const word = norm($('card-search').value);
+  if (!word || !cardData) { $('card-results').replaceChildren(); return; }
+  const found = cardData.packs.flatMap(p => (p.regular || []).concat(p.cards).filter(c => norm(`${c.name}${c.jpName}${c.species || ''}`).includes(word)));
+  const list = el('ul', '', 'gallery');
+  list.append(...found.slice(0, MAX_FOUND).map(c => { const li = c.image ? cardFigure(c) : cardBlank(c); li.append(el('small', c.packName, 'from')); return li; }));
+  $('card-results').replaceChildren(
+    el('p', found.length ? `"${$('card-search').value.trim()}" 검색 결과 ${found.length}장` + (found.length > MAX_FOUND ? ` · 앞 ${MAX_FOUND}장만 보여 줍니다. 더 구체적으로 적어 보세요.` : '') : '맞는 카드가 없습니다.', 'pack-meta'),
+    list);
+});
+
+// ---------- 5-3b. 첫 화면 소식 게시판 ----------
+// 포켓몬코리아 사이트는 브라우저에서 직접 읽을 수 없어(CORS), 중계 프로그램(Cloudflare Worker, cloudflare-worker/news-worker.js)이
+// 지금 유효한 소식·제품만 골라 준다. 방문할 때마다 한 번 부른다. 주소가 없으면 게시판을 숨긴다.
+const NEWS_API = document.documentElement.dataset.newsApi || '';
+const NEWS_PAGE = 'https://pokemoncard.co.kr/news';
+let boardReady = false;
+// 받은 링크·그림 주소는 포켓몬코리아 공식 사이트 것만 쓴다
+const OFFICIAL_URL = /^https:\/\/(pokemoncard\.co\.kr|(www\.)?pokemonkorea\.co\.kr|(www\.)?pokemonstore\.co\.kr)\//;
+const OFFICIAL_IMG = /^https:\/\/data1\.pokemonkorea\.co\.kr\//;
+// 제목 낱말로 분류: 앞에 있는 것부터 맞춰 본다("발매 기념 토너먼트"는 대회)
+const NEWS_KIND = [['대회', /토너먼트|대회|리그|챔피언|Masters|배틀|대항전/], ['이벤트', /추첨|응모|이벤트|기념|증정|프로모/], ['발매', /발매|판매|출시|예약/], ['매장', /카드샵|오픈|스토어|휴무/]];
+const kindOf = title => (NEWS_KIND.find(([, re]) => re.test(title)) || ['공지'])[0];
+console.assert(kindOf('「스톰에메랄다」 발매 기념 토너먼트 개최!') === '대회' && kindOf('2차 추첨 응모 일정 안내') === '이벤트' && kindOf('스타터세트 발매!') === '발매' && kindOf('본사 휴무 안내') === '매장', 'kindOf');
+// 날짜 글자: 올해면 "1/23", 다른 해면 "2027.1/23"
+const md = (d, today) => (d.slice(0, 4) === today.slice(0, 4) ? '' : d.slice(0, 4) + '.') + `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+// 남은 날: "D-12" / "오늘" / 지났으면 null
+const dday = (d, today) => { const n = Math.round((Date.parse(d) - Date.parse(today)) / 86400000); return n > 0 ? `D-${n}` : n === 0 ? '오늘' : null; };
+console.assert(md('2027-01-23', '2026-10-18') === '2027.1/23' && dday('2026-10-30', '2026-10-18') === 'D-12' && dday('2026-10-01', '2026-10-18') === null, 'md·dday');
+
+function renderBoard(data) {
+  const today = data.today;
+  const news = (data.news || []).filter(n => OFFICIAL_URL.test(n.url));
+  $('board-news').replaceChildren(...(news.length ? news.map(n => {
+    const li = el('li');
+    const a = el('a');
+    a.href = n.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    const kind = kindOf(n.title);
+    a.append(el('b', kind, 'kind k-' + kind), ' ', el('span', n.title));
+    // 기간: 시작 전이면 D-day, 진행 중이면 마감일, 기간을 모르면 안내
+    const period = n.end ? (n.begin && n.begin !== n.end ? `${md(n.begin, today)} ~ ${md(n.end, today)}` : md(n.end, today)) : '기간은 공식 글에서 확인';
+    const soon = n.begin && dday(n.begin, today);
+    const meta = el('small', `${period}${soon ? ` · ${soon}` : n.end ? ' · 진행 중' : ''} · ${md(n.posted, today)} 게시`);
+    li.append(a, meta);
+    return li;
+  }) : [el('li', '지금 진행 중인 소식이 없습니다.', 'none')]));
+  const products = (data.products || []).filter(p => OFFICIAL_URL.test(p.url));
+  $('board-products').replaceChildren(...(products.length ? products.map(p => {
+    const li = el('li');
+    const a = el('a');
+    a.href = p.url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    if (OFFICIAL_IMG.test(p.image || '')) { const img = el('img'); img.src = p.image; img.alt = ''; img.loading = 'lazy'; a.append(img); }
+    const left = dday(p.releaseDate, today);
+    a.append(el('strong', p.name), el('small', `${md(p.releaseDate, today)} ${left ? '발매 예정' : '발매'}${p.price ? ` · ${p.price}` : ''}`));
+    if (left) a.append(el('b', left, 'dday'));
+    li.append(a);
+    return li;
+  }) : [el('li', '최근 발매했거나 발매 예정인 제품이 없습니다.', 'none')]));
+  $('board-note').textContent = `${new Date(data.fetchedAt).toLocaleString('sv-SE').slice(5, 16)} 기준 · 출처 포켓몬코리아 · 끝난 이벤트는 빼고 지금 유효한 것만 보여 줍니다.`;
+}
+
+function loadBoard() {
+  if (!NEWS_API) return; // 중계 프로그램 주소가 없으면 게시판을 쓰지 않는다
+  boardReady = true; // 불러오는 동안에도 게시판 자리를 보여 준다
+  $('board').hidden = $('empty').hidden;
+  $('board-note').textContent = '소식을 불러오는 중…';
+  // 중계 프로그램이 공식 사이트를 새로 읽는 중이면 오래 걸릴 수 있어 30초까지 기다린다
+  fetch(NEWS_API, { signal: AbortSignal.timeout(30000) })
+    .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+    .then(renderBoard)
+    .catch(() => {
+      const a = el('a', '공식 사이트에서 소식 보기');
+      a.href = NEWS_PAGE;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      $('board-note').replaceChildren('소식을 불러오지 못했습니다. ', a);
+      $('board-news').replaceChildren();
+      $('board-products').replaceChildren();
+    });
+}
 
 // ---------- 5-4. 편의점 연결 상태 ----------
 // 페이지가 열릴 때 편의점마다 흔한 상품(삼다수)을 강남역 기준으로 한 번씩 조회해 보고,
@@ -1071,6 +1347,7 @@ function checkHealth() {
         detail.textContent = '재고 조회 가능';
         health[chain.id] = true;
         applyHealth(chain.id);
+        foldHealth();
       })
       .catch(e => {
         state.textContent = '오류';
@@ -1078,9 +1355,27 @@ function checkHealth() {
         detail.textContent = reasonText(e);
         health[chain.id] = false;
         applyHealth(chain.id);
+        foldHealth();
       });
   }
   $('health-note').textContent = `${new Date().toLocaleString('sv-SE').slice(0, 16)}에 편의점마다 한 번씩 시험 조회한 결과입니다. 새로고침하면 다시 확인합니다.`;
+}
+
+// 접고 펴는 영역(details)의 펼친 내용 맨 아래에 [접기 ▴] 버튼을 둔다. 누르면 접고 제목으로 돌아간다
+function addFold(d) {
+  const btn = el('button', '접기 ▴', 'fold-btn');
+  btn.type = 'button';
+  btn.addEventListener('click', () => { d.open = false; d.querySelector('summary').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
+  d.append(btn);
+  return d;
+}
+document.querySelectorAll('details').forEach(addFold); // 페이지에 처음부터 있는 영역(연결 상태, ⓘ 안내)
+
+// 4곳 확인이 모두 끝나면 연결 상태를 "● CU ● GS25 …" 한 줄로 접는다(초록 = 정상, 빨강 = 오류). 누르면 4칸 박스가 펼쳐진다
+function foldHealth() {
+  if (CHAINS.some(c => !(c.id in health)) || !$('health-fold')) return;
+  $('health-dots').replaceChildren(...CHAINS.map(c => el('span', `${c.name} ${health[c.id] ? '정상' : '오류'}`, health[c.id] ? 'dot ok' : 'dot bad')));
+  $('health-fold').open = false;
 }
 
 // ---------- 6. 결과 화면 ----------
@@ -1100,7 +1395,7 @@ function renderSummary() {
       : result.stopped && result.left[chain.id] > 0 ? ['중지됨', 'wait']
       : found.length === 0 && !chain.note ? ['조회 불가', 'bad'] : ['완료', 'ok'];
 
-    const card = el('button', '', 'card' + (sum.inStock > 0 ? ' has-stock' : '') + (busy ? ' busy' : ''));
+    const card = el('button', '', `card chain-${chain.id}` + (sum.inStock > 0 ? ' has-stock' : '') + (busy ? ' busy' : '')); // chain-○○ = 편의점 대표색 띠
     card.type = 'button';
     card.setAttribute('aria-pressed', String(chainFilter === chain.id));
     const head = el('span', '', 'card-head');
@@ -1158,6 +1453,34 @@ function renderSummary() {
   }
 }
 
+// [결과 공유]: 지금 목록에 보이는 점포 위에서 10곳을 글로 만들어 휴대폰 공유 창(카카오톡·문자 등)으로 보낸다.
+// 공유 창이 없는 PC 에서는 글을 복사한다. 내 위치(거리)는 넣지 않는다.
+let lastShown = [];
+const SHARE_MAX = 10;
+function shareText() {
+  const lines = [`포켓몬 카드 재고 · ${$('fetched-at').textContent.replace('조회 시각 ', '')} 조회`, $('scope').textContent.replace('중간에 멈춘 결과입니다. ', '')];
+  for (const s of lastShown.slice(0, SHARE_MAX)) {
+    const stocks = result.keywords.map(k => [k, s.stock[k]]).filter(([, n]) => n > 0)
+      .map(([k, n]) => `${(result.matched[s.chain][k] || {}).name || k} ${stockLabel(n)}`);
+    const region = catalog.regions.find(r => r.id === s.region).name;
+    lines.push(`- ${chainName(s.chain)} ${s.name}: ${stocks.join(', ') || '재고 없음'} (${region})`);
+  }
+  if (lastShown.length > SHARE_MAX) lines.push(`외 ${lastShown.length - SHARE_MAX}곳`);
+  if (!lastShown.length) lines.push('재고가 있는 점포가 없습니다.');
+  lines.push(location.origin + location.pathname);
+  return lines.join('\n');
+}
+$('share-btn').addEventListener('click', async () => {
+  const text = shareText();
+  const btn = $('share-btn');
+  const say = word => { btn.textContent = word; setTimeout(() => { btn.textContent = '결과 공유'; }, 2000); };
+  if (navigator.share) {
+    try { await navigator.share({ title: '포켓몬 카드 재고', text }); } catch (e) { /* 공유 창을 닫은 경우 */ }
+    return;
+  }
+  try { await navigator.clipboard.writeText(text); say('복사했습니다'); } catch (e) { say('복사하지 못했습니다'); }
+});
+
 // 요약 아래의 목록: 재고가 있는 점포만 보여 준다
 function renderList() {
   // 검색창에 글자가 있으면: 조회된 점포 전체(재고 없는 점포 포함)에서 이름·주소로 찾는다.
@@ -1168,6 +1491,8 @@ function renderList() {
     .filter(s => !chainFilter || s.chain === chainFilter)
     // 내 위치를 알면 가까운 점포부터, 모르면 수량이 많은 점포부터
     .sort((a, b) => me ? distanceM(me, [a.lat, a.lng]) - distanceM(me, [b.lat, b.lng]) : totalQty(b) - totalQty(a));
+  lastShown = shown; // [결과 공유]가 지금 보이는 목록을 그대로 쓴다
+  $('share-btn').hidden = result.live; // 조회가 끝난 뒤에만
   const who = chainFilter ? chainName(chainFilter) + ' ' : '';
   $('panel-title').textContent = word ? `검색된 ${who}점포 ${shown.length}곳` : `재고 있는 ${who}점포 ${shown.length}곳`;
   const order = me ? '내 위치에서 가까운 순입니다.' : '재고가 많은 순입니다. 브라우저에서 위치 사용을 허용하면 가까운 순으로 바뀝니다.';
@@ -1183,7 +1508,7 @@ function renderList() {
     for (const chain of result.chains) {
       const mine = rows.filter(s => s.chain === chain.id);
       if (mine.length === 0) continue;
-      items.push(el('li', `${chain.name} · ${mine.length}곳`, 'group'));
+      items.push(el('li', `${chain.name} · ${mine.length}곳`, `group chain-${chain.id}`));
       items.push(...mine.map((s, i) => storeItem(s, chain.id + i)));
     }
     $('store-list').replaceChildren(...items);
@@ -1209,7 +1534,9 @@ function storeItem(store, i) {
   btn.setAttribute('aria-expanded', 'false');
   btn.setAttribute('aria-controls', mapBox.id);
 
-  btn.append(el('strong', `${chainName(store.chain)} ${store.name}`));
+  const title = el('strong');
+  title.append(el('span', chainName(store.chain), `chain-tag chain-${store.chain}`), ' ' + store.name); // 편의점 이름은 대표색 배지로
+  btn.append(title);
   btn.append(el('span', store.address, 'where'));
   // 권역 이름, 그리고 내 위치를 알면 거리도 함께
   const region = catalog.regions.find(r => r.id === store.region).name;
@@ -1257,6 +1584,7 @@ function mapNodes(store) {
 
 // ---------- 7. 시작 ----------
 checkHealth(); // 편의점 연결 상태부터 확인한다
+loadBoard();   // 첫 화면 소식 게시판
 
 // 점포 검색창: 글자를 적을 때마다 목록을 다시 그린다
 $('store-search').addEventListener('input', () => { if (result) renderList(); });
@@ -1271,7 +1599,7 @@ fetch('cards.json?v=' + VERSION) // 주소에 버전을 붙여, 배포 뒤에 �
   .then(json => {
     cardData = json;
     // 카드마다 TCGdex 카드 id(팩 번호-카드 번호)와 자료 언어를 붙인다. 시세를 찾을 때 쓴다
-    for (const p of cardData.packs) for (const c of (p.regular || []).concat(p.cards)) { c.id = `${p.id}-${c.no.split('/')[0]}`; c.lang = p.lang || 'ja'; }
+    for (const p of cardData.packs) for (const c of (p.regular || []).concat(p.cards)) { c.id = `${p.id}-${c.no.split('/')[0]}`; c.lang = p.lang || 'ja'; c.packName = p.name; }
     renderPacks();
     renderHero();
     $('pick-mode').checked = !!localStorage.getItem('pokemon-stock-pick');

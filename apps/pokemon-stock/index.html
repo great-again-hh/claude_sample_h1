@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="ko" data-version="27">
+<!-- data-news-api = 소식 중계 프로그램(Cloudflare Worker) 주소. 비어 있으면 첫 화면 소식 게시판을 숨긴다 -->
+<html lang="ko" data-version="30" data-news-api="https://rough-bush-3101.pkcard-finder.workers.dev/">
 <head>
   <meta charset="UTF-8">
   <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
@@ -9,7 +10,7 @@
        integrity = 받은 파일이 바뀌지 않았는지 확인하는 지문 -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
   <!-- 왼쪽 사이드바: 제목, 조회 버튼, 조회 상태, 권역 체크박스 -->
@@ -19,7 +20,13 @@
       <h1>포켓몬 카드 <br>재고조회</h1>
       <div class="title-buttons">
         <!-- 초기화: 아래의 모든 선택을 푼다 -->
-        <button id="reset-btn" type="button">초기화</button>
+        <button id="reset-btn" type="button" aria-label="처음 화면으로 (초기화)" title="처음 화면으로 (초기화)">
+          <!-- 집 모양 아이콘 -->
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <path d="M3 11.5 12 4l9 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M5.5 10v10h5v-6h3v6h5V10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+          </svg>
+        </button>
         <!-- 일괄 조회: 팩 전체를 모든 권역에서 조회한다(조회 중에는 [중지]로 바뀐다) -->
         <button id="batch-btn" type="button">일괄 조회</button>
       </div>
@@ -28,7 +35,7 @@
 
     <!-- 조회할 상품을 직접 적는 입력칸. label 의 for 와 input 의 id 를 맞추면 글자를 눌러도 입력칸이 선택된다 -->
     <div class="field-row">
-      <label for="keyword" class="field">조회할 상품</label>
+      <label for="keyword" class="field">① 조회할 상품</label>
       <!-- 선택하기: 체크하면 입력칸 대신 아래의 팩 목록에서 고른다 -->
       <label class="pick"><input type="checkbox" id="pick-mode"><span>선택하기</span></label>
     </div>
@@ -37,46 +44,54 @@
     <form id="packs" class="checks" aria-label="포켓몬 카드 팩" hidden></form>
 
     <!-- 이 버튼을 누르면 script.js 가 체크한 권역의 점포를 공개 재고조회 서버에 실시간으로 물어본다 -->
-    <!-- 재고 조회와 카드 조회 버튼을 반반씩 나란히 -->
-    <div class="actions">
-      <button id="load-btn" type="button">재고 조회</button>
-      <!-- 카드 조회: 선택하기에서 고른 팩의 힛카드를 오른쪽에 보여 준다 -->
-      <button id="cards-btn" type="button">카드 조회</button>
+    <!-- 재고 조회와 카드 조회 버튼을 반반씩 나란히. 버튼·진행 막대·상태 글자는 사이드바를 내려도 위에 붙어 있다(sticky) -->
+    <div class="action-bar">
+      <div class="actions">
+        <button id="load-btn" type="button">재고 조회</button>
+        <!-- 카드 조회: 선택하기에서 고른 팩의 힛카드를 오른쪽에 보여 준다 -->
+        <button id="cards-btn" type="button">카드 조회</button>
+      </div>
+      <!-- progress = 진행 막대. value 를 0~100 으로 바꾸면 막대가 찬다 -->
+      <progress id="bar" max="100" value="0" aria-label="조회 진행률" hidden></progress>
+      <!-- aria-live: 내용이 바뀌면 화면 읽기 프로그램이 읽어 준다 -->
+      <p id="status" aria-live="polite"></p>
     </div>
-
-    <!-- progress = 진행 막대. value 를 0~100 으로 바꾸면 막대가 찬다 -->
-    <progress id="bar" max="100" value="0" aria-label="조회 진행률" hidden></progress>
-    <!-- aria-live: 내용이 바뀌면 화면 읽기 프로그램이 읽어 준다 -->
-    <p id="status" aria-live="polite"></p>
     <p id="fetched-at"></p>
 
     <!-- 조회 방식 1: 네이버 지도. 체크하면 아래 편의점·권역 선택은 잠긴다(둘 중 하나만 조회) -->
-    <h2>네이버 지도</h2>
+    <hr class="step">
+    <h2>② 네이버 지도</h2>
     <div class="checks">
       <label><input type="checkbox" id="naver-mode"><span>내 주변 판매처 찾기</span><small>반경 10km</small></label>
     </div>
 
     <!-- 조회 방식 2: 편의점 재고. 편의점 체크박스는 여러 개를 고를 수 있다. script.js 가 채운다 -->
-    <h2>조회할 편의점</h2>
+    <hr class="step">
+    <h2>③ 조회할 편의점</h2>
     <form id="chains" class="checks"></form>
 
     <!-- 권역 체크박스: script.js 가 stores.json 을 읽어 여기에 채운다 -->
-    <h2>조회할 권역</h2>
+    <h2>④ 조회할 권역</h2>
     <form id="regions"></form>
     <p id="estimate" aria-live="polite">점포 목록을 불러오는 중...</p>
 
-    <p class="notice">
-      네이버 지도와 편의점 중 한 가지 방식으로만 조회합니다. 조회한 순간의 값이니 방문 전 점포에 확인하세요.
-      내 위치는 이 브라우저 안에서 거리 계산에만 씁니다.
-    </p>
+    <!-- 긴 안내는 접어 두고 핵심 한 줄만 보인다. details/summary = 누르면 펼쳐지는 HTML 기본 기능 -->
+    <p class="notice">조회한 순간의 값이니 방문 전 점포에 확인하세요.</p>
+    <details class="info">
+      <summary>ⓘ 조회 안내</summary>
+      <p>네이버 지도와 편의점 중 한 가지 방식으로만 조회합니다. 내 위치는 이 브라우저 안에서 거리 계산에만 씁니다.</p>
+    </details>
   </header>
 
-  <main>
+  <main id="main-area">
     <!-- 편의점 연결 상태: 페이지가 열릴 때 script.js 가 편의점마다 시험 조회를 해 보고 박스 4개를 채운다 -->
     <section id="health-wrap">
-      <h2>편의점 연결 상태</h2>
-      <div id="health" aria-live="polite"></div>
-      <p id="health-note"></p>
+      <!-- 확인 중에는 펼쳐 두고, 4곳 확인이 끝나면 script.js 가 접어 "● CU ● GS25 …" 한 줄만 보이게 한다. 누르면 다시 펼쳐진다 -->
+      <details id="health-fold" open>
+        <summary><h2>편의점 연결 상태</h2> <span id="health-dots">확인 중…</span></summary>
+        <div id="health" aria-live="polite"></div>
+        <p id="health-note"></p>
+      </details>
     </section>
 
     <!-- 버튼을 누르기 전에 보이는 안내 -->
@@ -96,6 +111,22 @@
       <div id="hero-cards" class="hero-cards" aria-hidden="true"></div>
     </section>
 
+    <!-- 포켓몬 카드 소식: 첫 화면에서만 보인다. 방문할 때마다 중계 프로그램에서 지금 유효한 소식·제품만 받아 온다 -->
+    <section id="board" hidden>
+      <h2>포켓몬 카드 소식</h2>
+      <p id="board-note"></p>
+      <div class="board-cols">
+        <div>
+          <h3>진행 중·예정 소식</h3>
+          <ul id="board-news" class="board-news"></ul>
+        </div>
+        <div>
+          <h3>최근·발매 예정 제품</h3>
+          <ul id="board-products" class="board-products"></ul>
+        </div>
+      </div>
+    </section>
+
     <!-- 네이버 지도 방식의 결과: 내 위치 10km 안의 판매처를 지도와 목록으로 -->
     <section id="places" hidden>
       <h2 id="places-title"></h2>
@@ -108,11 +139,20 @@
     <!-- 카드 조회의 결과: 고른 팩마다 힛카드를 보여 준다 -->
     <section id="cards" hidden>
       <h2 id="cards-title"></h2>
-      <p id="cards-note">팩을 누르면 그 팩에 들어 있는 가장 높은 등급의 카드가 펼쳐집니다. 맨 아래의 "전체 카드 보기"를 펼치면 팩의 모든 카드를 번호순으로 볼 수 있습니다. 뽑힐 확률이나 실제 개봉 결과를 뜻하지 않습니다.
+      <!-- 카드 검색: 모든 팩의 카드를 이름으로 찾는다. 결과는 바로 아래에 -->
+      <label for="card-search" class="sr-only">카드 검색</label>
+      <input id="card-search" type="search" placeholder="카드 이름 검색 (예: 피카츄, 뮤츠)" maxlength="30" autocomplete="off">
+      <div id="card-results"></div>
+      <p id="cards-note">팩을 누르면 힛카드가 펼쳐지고, 카드를 누르면 큰 그림과 원화 시세를 볼 수 있습니다.</p>
+      <details class="info">
+        <summary>ⓘ 자료 안내</summary>
+        <p>맨 아래의 "전체 카드 보기"를 펼치면 팩의 모든 카드를 번호순·시세순으로 볼 수 있습니다. 펼쳐지는 카드는 뽑힐 확률이나 실제 개봉 결과를 뜻하지 않습니다.
          카드 그림은 공개 자료(TCGdex)의 일본어판 그림을 쓰고, 일본어판이 없으면 같은 그림의 영어판 카드 그림을 씁니다.
          어느 판에도 그림이 없는 카드(아직 영어판이 나오지 않은 스톰에메랄다 등)는 글자 카드로 표시합니다.
          팩 그림은 포켓몬코리아 공식 사이트의 한국어판 팩 그림이고, 박스는 실제 박스 사진이 없어 그 팩 그림을 앞면에 입혀 그린 모양입니다.
          포켓몬 30주년 팩은 영어판 자료로 만들었고 편의점 재고 조회에서는 뺐습니다. 최신 팩은 일부 이름이 일본어나 영어로 나옵니다.</p>
+        <p>시세는 Cardmarket(유럽 카드 거래 사이트)의 거래가를 그날 환율(유럽중앙은행 기준)로 원화로 바꾼 값이라 한국 시세와 다를 수 있습니다.</p>
+      </details>
       <div id="cards-list"></div>
     </section>
 
@@ -129,6 +169,8 @@
           <!-- 점포 검색창: 적는 즉시 조회된 점포 전체(재고 없는 점포 포함)에서 이름·주소로 찾는다 -->
           <label for="store-search" class="sr-only">점포 검색</label>
           <input id="store-search" type="search" placeholder="점포명·주소 검색 (예: 광교)" maxlength="30" autocomplete="off">
+          <!-- 결과 공유: 지금 보이는 점포 10곳을 글로 만들어 휴대폰 공유 창으로 보낸다(PC 는 복사) -->
+          <button id="share-btn" type="button" hidden>결과 공유</button>
         </div>
         <p id="panel-note"></p>
         <ul id="store-list"></ul>
@@ -136,15 +178,24 @@
     </section>
   </main>
 
+  <!-- 휴대폰에서만 보이는 이동 버튼: 결과가 있을 때 화면 오른쪽 아래에 -->
+  <nav class="jump" aria-label="화면 이동">
+    <button id="jump-up" type="button">조건 ↑</button>
+    <button id="jump-down" type="button">결과 ↓</button>
+  </nav>
+
   <footer>
+    <details class="info">
+      <summary>ⓘ 출처와 안내</summary>
     <p>편의점마다 입력한 검색어로 찾은 첫 번째 상품의 재고를 조회합니다. 어떤 상품이 골라졌는지는 요약 카드에 나옵니다.
        네이버 지도 방식은 네이버 지역 검색 결과이며 재고는 알 수 없습니다.
        이마트24는 재고 기록이 없는 점포가 "확인불가"로 집계됩니다.</p>
     <p>출처: 공개 재고조회 서버 mcp.aka.page (각 편의점 앱 데이터 기반, 비공식 조회 결과). <span id="built-at"></span> <span id="cards-source"></span></p>
+    </details>
   </footer>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="script.js?v=27"></script>
+  <script src="script.js?v=30"></script>
 </body>
 </html>

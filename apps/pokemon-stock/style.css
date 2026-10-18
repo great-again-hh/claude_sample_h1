@@ -7,9 +7,11 @@
   --point: #ffd23f;  /* 노랑: 조회 버튼, 선택된 것 */
   --sub: #b8e0ff;    /* 하늘: 사이드바 */
   --ok: #9be8a8;     /* 초록: 재고 있음 */
-  --dim: #555555;    /* 회색 글자: 품절, 확인불가 */
+  --dim: #444444;    /* 회색 글자: 품절, 확인불가 (크림색 바탕에서도 잘 읽히게 진하게) */
   --line: 2px solid var(--ink);
   --shadow: 3px 3px 0 var(--ink); /* 가로 3px, 세로 3px, 번짐 0 = 딱딱한 그림자 */
+  /* 편의점 대표색(글자는 대비가 충분하도록 보라·파랑엔 흰색, 주황·노랑엔 검정) */
+  --cu: #7b2d8e; --gs25: #0070b0; --seveneleven: #f47920; --emart24: #ffc20e;
 }
 
 /* grid: 왼쪽 280px 사이드바 + 나머지(1fr) 본문. 본문 아래 줄에 footer */
@@ -89,6 +91,11 @@ header label.field { display: block; padding: 0; margin-bottom: 4px; font-weight
 
 /* 재고 조회와 카드 조회를 반반씩 나란히 (1fr 1fr = 같은 폭 두 칸) */
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 버튼 줄: 사이드바를 내려도 위에 붙어 있다. 아래 글이 비치지 않게 사이드바 색으로 칠한다 */
+.action-bar { position: sticky; top: -28px; z-index: 3; margin: 0 -22px; padding: 10px 22px 2px; background: var(--sub); }
+/* 단계 사이 구분선 */
+.jump { display: none; } /* 이동 버튼은 휴대폰에서 결과가 있을 때만 */
+hr.step { margin: 18px 0 0; border: 0; border-top: 1px dashed rgb(0 0 0 / 0.35); }
 .actions button { text-align: center; font-size: 1rem; font-weight: 800; padding: 10px 4px; }
 #load-btn { background: var(--point); }
 
@@ -104,6 +111,7 @@ button:disabled { cursor: wait; background: var(--card); color: var(--dim); tran
 /* 초기화 버튼: 제목 오른쪽에 작고 조용하게 */
 /* 제목 오른쪽에 초기화와 일괄 조회를 위아래로. 두 버튼은 크기와 글자 크기가 같다 */
 .title-buttons { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; margin-top: 4px; }
+#reset-btn svg { display: block; margin: 0 auto; } /* 집 모양 아이콘을 가운데에 */
 #reset-btn, #batch-btn { min-height: 30px; padding: 2px 10px; font-size: 12px; font-weight: 700; text-align: center; box-shadow: 2px 2px 0 var(--ink); }
 #batch-btn { background: var(--point); }
 
@@ -123,6 +131,17 @@ fieldset:has(input:disabled) { background: transparent; }
 #status:empty, #fetched-at:empty { display: none; } /* :empty = 내용이 없을 때는 자리도 차지하지 않게 */
 #fetched-at { display: inline-block; margin: 12px 0 0; padding: 2px 8px; background: var(--ink); color: var(--card); font-weight: 700; font-size: 12px; }
 .notice { margin: 16px 0 0; font-size: 12px; }
+/* 접어 둔 안내: "ⓘ ○○ 안내"를 누르면 펼쳐진다 */
+.info { margin: 4px 0 10px; color: var(--dim); font-size: 12px; }
+.info summary { font-weight: 700; color: var(--ink); width: fit-content; }
+/* 접고 펴는 영역: 제목 끝에 "펼치기 ▾" / "접기 ▴"를 보여 준다(기본 삼각형 대신) */
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after { content: ' 펼치기 ▾'; color: var(--dim); font-size: 12px; font-weight: 700; white-space: nowrap; }
+details[open] > summary::after { content: ' 접기 ▴'; }
+/* 펼친 내용 맨 아래의 [접기 ▴] 버튼 */
+.fold-btn { display: block; margin: 8px 0 4px auto; min-height: 28px; padding: 2px 10px; font-size: 12px; font-weight: 700; box-shadow: 2px 2px 0 var(--ink); }
+.info p { margin: 6px 0 0; }
 
 /* "조회할 상품" 이름표와 [선택하기]를 한 줄의 양 끝에 */
 .field-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
@@ -137,7 +156,7 @@ header label.pick { padding: 0; font-size: 12px; font-weight: 700; }
 #cards-btn { background: var(--ok); }
 
 /* ---------- 힛카드 화면 ---------- */
-#cards-note { margin: 0 0 14px; color: var(--dim); font-size: 12px; }
+#cards-note { margin: 0 0 2px; font-size: 13px; }
 .pack { margin-bottom: 28px; padding: 14px 16px 16px; border: var(--line); border-radius: 8px; background: var(--card); box-shadow: var(--shadow); }
 .pack h3 { margin: 0; font-size: 1.15rem; font-weight: 800; }
 .pack-meta { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
@@ -228,7 +247,36 @@ button.pack-cover.has-img, button.pack-cover.has-img:hover { padding: 0; backgro
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); gap: 12px 10px; margin: 0; padding: 6px 0 10px; list-style: none; }
 .gallery img { display: block; width: 100%; height: auto; border: var(--line); border-radius: 6px; box-shadow: 2px 2px 0 var(--ink); }
 .gallery strong { display: block; margin-top: 4px; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
-.gallery span { color: var(--dim); font-size: 11px; }
+.gallery span { color: var(--dim); font-size: 12px; }
+/* 최근 오름·내림: ▲ 빨강, ▼ 파랑, 보합 회색 */
+.trend { font-size: 11px; font-weight: 800; white-space: nowrap; }
+.trend.up { color: #d62828; }
+.trend.down { color: #1d5fd1; }
+.trend.flat { color: var(--dim); font-weight: 400; }
+.price-big .trend { font-size: 14px; vertical-align: middle; }
+.hit-prices .rising { margin: 8px 0 0; }
+/* 가상 개봉 */
+.sim { margin: 10px 0 0; padding: 8px 12px; border: 1px dashed var(--ink); border-radius: 6px; }
+.sim small { color: var(--dim); font-size: 12px; }
+.sim-btn { min-height: 34px; padding: 4px 14px; font-weight: 800; background: var(--point); }
+.sim-total { margin: 4px 0 0; }
+.sim-cards { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); } /* 넓은 화면은 5장이 한 줄에 */
+.sim-cards li { animation: flip 0.5s backwards; animation-delay: calc(var(--i) * 0.45s); } /* 한 장씩 차례로 뒤집힌다 */
+@keyframes flip { from { opacity: 0; transform: perspective(600px) rotateY(90deg); } }
+@media (prefers-reduced-motion: reduce) { .sim-cards li { animation: none; } }
+/* 등급 배지: 등급마다 색이 다르다. 비싼 등급일수록 눈에 띄게 */
+.rb { display: inline-block; padding: 0 5px; border: 1px solid var(--ink); border-radius: 3px; background: var(--card); color: var(--ink); font-size: 11px; font-weight: 800; line-height: 1.45; vertical-align: 1px; }
+.rb-SAR { background: linear-gradient(135deg, #fff1a8, #f5b700); }                       /* 금색 */
+.rb-SR { background: linear-gradient(135deg, #ffffff, #b9c0c7); }                         /* 은색 */
+.rb-AR { background: #a8dcff; }                                                           /* 하늘색 */
+.rb-UR, .rb-MUR { background: linear-gradient(90deg, #ffb3b3, #fff1a8, #b8f0c0, #b3d4ff, #e0c2ff); border-color: #b8860b; } /* 무지개 */
+.rb-BWR { background: var(--ink); color: var(--card); }                                   /* 흑백 */
+.rb-FR { background: #7fe3d8; }                                                           /* 청록 */
+.rb-RR { background: #ffc58a; }                                                           /* 주황 */
+.rb-SSR { background: #ffc2e2; }
+.rb-ACE { background: #e2c9ff; }
+/* 카드 칸: 그림 → 이름 → 번호·등급 → 시세(오른쪽 끝) 순으로 모든 칸이 같은 모양 */
+.gallery li > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 누르면 카드 창이 열리는 칸: 버튼 모양은 지우고 그림만 */
 button.card-pick { display: block; width: 100%; min-height: 0; padding: 0; border: none; background: none; box-shadow: none; }
 button.card-pick:hover { transform: translateY(-2px); box-shadow: none; }
@@ -247,10 +295,10 @@ button.tcg:active { box-shadow: 3px 3px 0 var(--ink); }
 .dialog-close { position: absolute; top: 8px; right: 8px; min-height: 30px; padding: 2px 10px; font-weight: 800; }
 .card-info h3 { margin: 0 64px 2px 0; font-size: 1.2rem; font-weight: 800; }
 .card-info .price { display: flex; flex-direction: column; gap: 2px; margin: 12px 0; padding: 10px 12px; border: var(--line); border-radius: 8px; background: var(--bg); }
-.card-info .price small { color: var(--dim); font-size: 11px; }
+.card-info .price small { color: var(--dim); font-size: 12px; }
 .price-big { font-size: 1.8rem; font-weight: 900; line-height: 1.1; }
 /* 그림이 없는 카드: 카드 모양의 빈 칸 */
-.gallery .blank { display: grid; place-items: center; aspect-ratio: 245 / 337; border: 2px dashed var(--dim); border-radius: 6px; background: var(--bg); color: var(--dim); font-size: 11px; }
+.gallery .blank { display: grid; place-items: center; aspect-ratio: 245 / 337; border: 2px dashed var(--dim); border-radius: 6px; background: var(--bg); color: var(--dim); font-size: 12px; }
 
 /* 등급별 카드 색: 색만으로 구분하지 않고 등급 글자를 함께 적는다 */
 .r-SAR { background: var(--point); }
@@ -267,13 +315,75 @@ button.tcg:active { box-shadow: 3px 3px 0 var(--ink); }
 .chips strong { display: block; font-size: 13px; font-weight: 800; }
 .chips span { color: var(--dim); font-size: 12px; }
 .pack summary { margin-top: 6px; cursor: pointer; font-weight: 700; font-size: 12px; }
+/* 카드 검색칸과 결과 */
+#card-search { width: 320px; max-width: 100%; height: 38px; margin: 0 0 8px; padding: 0 10px; box-sizing: border-box; font: inherit; border: var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+#card-results { margin-bottom: 14px; }
+.gallery .from { display: block; color: var(--dim); font-size: 12px; }
+.gallery li > .card-price { text-align: right; white-space: nowrap; }
+/* 카드 칸 아래의 시세 */
+.gallery .card-price { display: block; font-size: 12px; font-weight: 800; color: var(--ink); }
+.gallery .card-price.none { font-weight: 400; color: var(--dim); }
+/* 전체 카드: [번호순] [시세순] */
+.sort-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0 4px; }
+.sort-bar .sort { min-height: 30px; padding: 2px 12px; font-size: 12px; font-weight: 800; box-shadow: 2px 2px 0 var(--ink); }
+.sort-note { color: var(--dim); font-size: 12px; }
+/* 팩의 힛카드 시세 요약 */
+.hit-prices { margin: 8px 0 0; padding: 8px 12px; border: 1px solid var(--ink); border-radius: 6px; background: var(--bg); font-size: 13px; }
+.hit-prices p { margin: 0 0 6px; }
+.hit-prices small { color: var(--dim); font-size: 12px; }
+.top3-title { display: block; margin-bottom: 4px; }
+.top3 { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.top3 li { display: grid; grid-template-columns: 44px auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; }
+.top3 .card-pick { grid-row: 1 / 3; width: 44px; }
+.top3 img, .top3 .blank { display: block; width: 44px; height: auto; aspect-ratio: 245 / 337; border: 1px solid var(--ink); border-radius: 3px; }
+.top3 .blank { display: grid; place-items: center; font-size: 9px; background: var(--card); }
+.top3 b { font-size: 14px; }
 .all-cards { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--ink); }
 .all-cards > summary { font-size: 13px; }
 /* 움직임을 줄이도록 설정한 사람에게는 등장 효과를 끈다 */
 @media (prefers-reduced-motion: reduce) { .slot { animation: none; } .tcg { transition: none; } }
 
 /* 편의점 연결 상태 박스 4개 */
+/* 편의점 대표색: 요약 카드 왼쪽 띠, 점포 목록의 편의점 배지, 일괄 조회의 편의점 묶음 제목 */
+.chain-cu { --chain: var(--cu); --chain-ink: #fff; }
+.chain-gs25 { --chain: var(--gs25); --chain-ink: #fff; }
+.chain-seveneleven { --chain: var(--seveneleven); --chain-ink: var(--ink); }
+.chain-emart24 { --chain: var(--emart24); --chain-ink: var(--ink); }
+.card[class*="chain-"] { border-left: 8px solid var(--chain); }
+.chain-tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--chain); color: var(--chain-ink); font-size: 0.85em; }
+li.group[class*="chain-"] { border-left: 6px solid var(--chain); padding-left: 8px; }
+/* 첫 화면 소식 게시판 */
+#board { margin-top: 24px; }
+#board-note { margin: 0 0 10px; color: var(--dim); font-size: 12px; }
+.board-cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.board-cols h3 { margin: 0 0 8px; font-size: 14px; font-weight: 800; }
+.board-news, .board-products { margin: 0; padding: 0; list-style: none; border: var(--line); border-radius: 8px; background: var(--card); box-shadow: var(--shadow); }
+.board-news li { padding: 9px 12px; border-top: 1px solid rgb(0 0 0 / 0.15); }
+.board-news li:first-child { border-top: none; }
+.board-news a { color: var(--ink); text-decoration: none; font-weight: 700; }
+.board-news a:hover span { text-decoration: underline; }
+.board-news small { display: block; margin-top: 2px; color: var(--dim); font-size: 12px; }
+.board-news .none, .board-products .none { padding: 12px; color: var(--dim); font-size: 13px; }
+.kind { display: inline-block; padding: 0 6px; border: 1px solid var(--ink); border-radius: 4px; font-size: 11px; font-weight: 800; vertical-align: 1px; }
+.k-대회 { background: #ffc58a; } .k-이벤트 { background: #ffc2e2; } .k-발매 { background: #9be8a8; } .k-매장 { background: #a8dcff; } .k-공지 { background: var(--card); }
+.board-products li { border-top: 1px solid rgb(0 0 0 / 0.15); }
+.board-products li:first-child { border-top: none; }
+.board-products a { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px; align-items: center; padding: 8px 12px; color: var(--ink); text-decoration: none; }
+.board-products img { grid-row: 1 / 3; width: 52px; height: 52px; object-fit: contain; }
+.board-products strong { font-size: 13px; font-weight: 800; }
+.board-products small { grid-column: 2; color: var(--dim); font-size: 12px; }
+.board-products .dday { grid-column: 3; grid-row: 1 / 3; padding: 2px 8px; border: var(--line); border-radius: 999px; background: var(--point); font-size: 12px; }
 #health-wrap { margin-bottom: 24px; }
+/* 연결 상태 머리줄: 제목 + 점 4개(접혀 있을 때도 보인다) */
+#health-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; cursor: pointer; list-style: none; }
+#health-fold > summary::-webkit-details-marker { display: none; }
+#health-fold > summary h2 { margin: 0; }
+#health-fold[open] > summary { margin-bottom: 10px; }
+#health-dots { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; font-weight: 700; }
+#health-dots .dot::before { content: '● '; } /* 점 색으로 상태를 보여 주고, 글자(정상/오류)도 함께 적어 색을 못 봐도 알 수 있게 */
+#health-dots .dot.ok::before { color: #1f9d3a; }
+#health-dots .dot.bad::before { color: #d62828; }
+
 #health { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } /* 편의점 4곳을 항상 한 줄에 */
 .health-box { padding: 10px 12px; border: var(--line); border-radius: 6px; background: var(--card); box-shadow: var(--shadow); }
 .health-box strong { display: block; font-size: 1.05rem; font-weight: 800; }
@@ -334,7 +444,7 @@ button.tcg:active { box-shadow: 3px 3px 0 var(--ink); }
 .stats > span { display: flex; flex-direction: column; align-items: center; padding: 2px 0; }
 .stats > span + span { border-left: 1px solid var(--ink); }
 .stats b { font-weight: 800; line-height: 1.3; }
-.stats small { font-size: 10px; white-space: nowrap; }
+.stats small { font-size: 11px; white-space: nowrap; }
 /* 맨 아래 줄: 두 줄까지만 보이고 넘치면 말줄임표 */
 .card .card-foot { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em; line-height: 1.4; }
 
@@ -346,12 +456,13 @@ button[aria-expanded="true"], button[aria-pressed="true"] { background: var(--po
 /* container-type: size = 안쪽에서 이 자리의 너비(cqw)·높이(cqh)를 잴 수 있게 한다. 카드는 자리에 들어가는 가장 큰 크기로 */
 .deal { grid-column: 2; grid-row: 2 / -1; container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
 .deal img { width: min(100cqw - 4px, (100cqh - 20px) * 245 / 337); aspect-ratio: 245 / 337; border: var(--line); border-radius: 6px; background: var(--bg); box-shadow: 2px 2px 0 var(--ink); }
-.deal small { width: 100%; text-align: center; color: var(--ink); font-size: 10px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deal small { width: 100%; text-align: center; color: var(--ink); font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 #panel { margin-top: 28px; }
 /* 목록 제목은 왼쪽, 점포 검색창은 오른쪽 끝에 */
 .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
 .panel-head h2 { margin: 0; }
+#share-btn { min-height: 36px; padding: 4px 12px; font-weight: 800; background: var(--point); }
 #store-search { width: 260px; max-width: 100%; height: 36px; padding: 0 10px; box-sizing: border-box; font: inherit; border: var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
 /* 화면에는 안 보이지만 화면 읽기 프로그램은 읽는 글자(입력칸의 이름표) */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -365,11 +476,11 @@ legend .all { min-height: 22px; margin-left: 6px; padding: 0 8px; font-size: 12p
 .checks { padding: 6px 10px; border: var(--line); border-radius: 6px; background: var(--card); } /* 편의점 체크박스 상자 */
 /* 체크박스 | 이름 | 점포 수(오른쪽 끝) 를 한 줄에 */
 header label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
-header label small { margin-left: auto; color: var(--dim); font-size: 11px; }
+header label small { margin-left: auto; color: var(--dim); font-size: 12px; }
 /* 조회할 편의점·권역: 점포 수를 이름 뒤 같은 자리에서 왼쪽 정렬(이름 칸 너비를 6em 으로 맞춘다) */
 #chains label, #regions label { display: grid; grid-template-columns: auto 6em 1fr; }
 #chains label small, #regions label small { margin-left: 0; }
-.checks .hint { display: block; margin-top: 4px; color: var(--dim); font-size: 11px; } /* 체크박스 아래의 짧은 안내 */
+.checks .hint { display: block; margin-top: 4px; color: var(--dim); font-size: 12px; } /* 체크박스 아래의 짧은 안내 */
 header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); } /* accent-color = 체크 표시의 색 */
 #estimate { margin: 8px 0 0; font-weight: 700; font-size: 12px; }
 
@@ -405,6 +516,9 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
 
 /* 화면 폭 700px 이하(휴대폰): 사이드바를 위로 올려 한 열로, 누르는 요소는 손가락에 맞게 44px 이상 */
 @media (max-width: 700px) {
+  .action-bar { top: 0; margin: 0 -16px; padding: 8px 16px 2px; } /* 휴대폰은 화면 맨 위 기준 */
+  .has-result .jump { display: flex; flex-direction: column; gap: 8px; position: fixed; right: 12px; bottom: 16px; z-index: 20; }
+  .jump button { min-height: 40px; padding: 4px 12px; font-size: 13px; font-weight: 800; background: var(--point); }
   body { display: block; }
   header { position: static; height: auto; border-right: none; border-bottom: var(--line); padding: 20px 16px; overflow-y: visible; }
   h1 br { display: none; }
@@ -413,11 +527,14 @@ header input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
   button, legend .all { min-height: 44px; }
   header label { padding: 10px 0; }
   .map a { padding: 12px 0; }
+  .board-cols { grid-template-columns: 1fr; } /* 휴대폰: 소식과 제품을 위아래로 */
   #health { gap: 6px; }
   .health-box { padding: 6px; }
   .health-box strong { font-size: 12px; }
   .health-box .state { padding: 0 4px; font-size: 11px; }
-  .health-box small { font-size: 10px; }
+  .health-box small { font-size: 11px; }
+  /* 휴대폰: 작은 설명 글자는 13px */
+  .gallery span, .gallery .from, .card-info .price small, .hit-prices small, header label small, .checks .hint, .card .card-foot, .pack-meta, #cards-note { font-size: 13px; }
   .card-dialog[open] { grid-template-columns: 1fr; } .card-dialog > img, .card-dialog > .blank { max-width: 220px; justify-self: center; }
   #summary { grid-template-columns: 1fr; } /* 요약 카드는 숫자와 힛카드가 함께 들어가야 해서 한 줄에 하나 */
   .card { height: 260px; } /* 폭이 넓어진 만큼 높이도 늘려 힛카드를 크게 */
