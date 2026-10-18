@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '30';
+const VERSION = '31';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -1291,7 +1291,7 @@ function renderBoard(data) {
     if (OFFICIAL_IMG.test(p.image || '')) { const img = el('img'); img.src = p.image; img.alt = ''; img.loading = 'lazy'; a.append(img); }
     const left = dday(p.releaseDate, today);
     a.append(el('strong', p.name), el('small', `${md(p.releaseDate, today)} ${left ? '발매 예정' : '발매'}${p.price ? ` · ${p.price}` : ''}`));
-    if (left) a.append(el('b', left, 'dday'));
+    a.append(el('b', left || '발매', left ? 'dday' : 'dday done')); // 오른쪽 상태 배지: 남은 날 또는 "발매"
     li.append(a);
     return li;
   }) : [el('li', '최근 발매했거나 발매 예정인 제품이 없습니다.', 'none')]));
