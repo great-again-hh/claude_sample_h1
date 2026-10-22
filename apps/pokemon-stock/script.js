@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '33';
+const VERSION = '36';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -202,7 +202,7 @@ function updateEstimate() {
   const storesIn = r => chains.reduce((sum, c) => sum + r.count[c.id], 0);
   for (const r of catalog.regions) $('n-' + r.id).textContent = `점포 ${storesIn(r)}곳`;
 
-  if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · [재고 조회]를 누르면 포켓몬 카드 도감의 판매처·재고 지도(반경 약 10km)를 새 탭으로 엽니다. 내 위치는 약 1km 단위로 흐리게 보냅니다. 편의점 선택은 잠깁니다.'; return; }
+  if ($('naver-mode').checked) { $('estimate').textContent = '네이버 지도 선택됨 · 내 위치 10km 안의 판매처를 찾습니다(조회 최대 16회). 상품 칸이 비어 있으면 포켓몬카드로 찾고, 포켓몬 카드를 찾을 때는 무인문구점도 함께 찾습니다. 편의점 선택은 잠깁니다.'; return; }
   if (chains.length === 0 || regions.length === 0) { $('estimate').textContent = '네이버 지도, 또는 편의점과 권역을 체크하세요.'; return; }
   const noStock = $('pick-mode').checked && checkedPacks().find(p => p.noStock);
   if (noStock) { $('estimate').textContent = `${noStock.name} 팩은 편의점 재고 조회에서 뺀 팩입니다. [카드 조회]로 힛카드만 볼 수 있습니다.`; return; }
@@ -510,24 +510,24 @@ async function runStores(keywords, batch = null) {
   if (resetAfterStop) { resetAfterStop = false; $('batch-btn').textContent = '일괄 조회'; $('reset-btn').click(); } // 조회 중에 [초기화]를 눌렀으면
 }
 
-// 메인 영역에는 결과 한 가지만 보인다: 'empty'(안내) / 'result'(편의점) / 'cards'(힛카드)
+// 메인 영역에는 결과 한 가지만 보인다: 'empty'(안내) / 'result'(편의점) / 'places'(네이버 지도) / 'cards'(힛카드)
 function showMain(which) {
   setTab('main'); // 조회 결과는 [재고·카드] 탭에 나온다
-  for (const id of ['empty', 'result', 'cards']) $(id).hidden = id !== which;
+  for (const id of ['empty', 'result', 'places', 'cards']) $(id).hidden = id !== which;
   document.body.classList.toggle('has-result', which !== 'empty'); // 휴대폰의 [조건 ↑] [결과 ↓] 버튼을 보이게 한다
   $('board').hidden = which !== 'empty' || !boardReady; // 소식 게시판은 첫 화면에서만
 }
 
-// 본문 탭: [재고·카드] = 지금까지의 화면, [거래소] = 포켓몬 카드 도감 거래소 안내(새 탭으로 연다)
+// 본문 탭: [재고·카드] = 지금까지의 화면, [거래소]·[도감 지도] = 포켓몬 카드 도감 안내(새 탭으로 연다)
+const TABS = ['main', 'exchange', 'dogam', 'scanner'];
 function setTab(which) {
-  const ex = which === 'exchange';
-  document.body.classList.toggle('tab-exchange', ex); // CSS 가 [재고·카드] 쪽 영역을 숨긴다
-  $('exchange').hidden = !ex;
-  $('tab-main').setAttribute('aria-selected', String(!ex));
-  $('tab-exchange').setAttribute('aria-selected', String(ex));
+  document.body.classList.toggle('tab-other', which !== 'main'); // CSS 가 [재고·카드] 쪽 영역을 숨긴다
+  for (const t of TABS) {
+    $('tab-' + t).setAttribute('aria-selected', String(t === which));
+    if (t !== 'main') $(t).hidden = t !== which;
+  }
 }
-$('tab-main').addEventListener('click', () => setTab('main'));
-$('tab-exchange').addEventListener('click', () => setTab('exchange'));
+for (const t of TABS) $('tab-' + t).addEventListener('click', () => { setTab(t); if (t === 'dogam') prepareDogam(); });
 
 // 휴대폰(한 열 화면)에서는 결과가 사이드바 아래에 있어서, 조회를 시작하면 결과 쪽으로 내려 준다
 const narrow = matchMedia('(max-width: 700px)');
@@ -543,8 +543,8 @@ $('load-btn').addEventListener('click', async () => {
   const picking = $('pick-mode').checked;    // "선택하기"로 팩을 고르는 중인가
   if (keyword && !picking) localStorage.setItem('pokemon-stock-keyword', keyword); // 다음에 열어도 같은 검색어가 들어 있게 기억해 둔다
 
-  // 네이버 지도: 포켓몬 카드 도감의 판매처 지도를 새 탭으로 연다(검색어는 쓰지 않는다)
-  if ($('naver-mode').checked) { openDogam(); return; }
+  // 네이버 지도: 팩을 고르는 중이거나 입력칸이 비어 있으면 기본 검색어(포켓몬카드)로 찾는다
+  if ($('naver-mode').checked) { await runPlaces(picking || !keyword ? DEFAULT_PLACE_WORD : keyword); return; }
 
   // 편의점: "선택하기"면 고른 팩 이름들이, 아니면 입력칸의 글자가 검색어다
   if (picking) {
@@ -582,11 +582,146 @@ $('batch-btn').addEventListener('click', async () => {
   btn.textContent = '일괄 조회';
 });
 
-// ---------- 5-2. 네이버 지도 → 포켓몬 카드 도감 판매처 지도(새 탭) ----------
-// "내 주변 판매처 찾기"를 체크하고 [재고 조회]를 누르면 포켓몬 카드 도감(dogam.app)의 판매처·재고 지도를 새 탭으로 연다.
+// ---------- 5-2. 네이버 지도: 내 위치 10km 안의 판매처 찾기 ----------
+// 공개 서버의 "네이버 지역 검색" 도구를 쓴다. 이 도구는 좌표가 아니라 "지역 이름 + 검색어"로 찾고 한 번에 5곳까지만 준다.
+// 그래서 내 주변의 구·동 이름 여러 개로 나눠 검색한 뒤 합치고, 10km 안의 곳만 남긴다.
+// 내 좌표는 어디에도 보내지 않는다. 주변 지역 이름은 저장된 점포 목록의 주소에서 알아낸다.
+const RADIUS = 10000; // 반경 10km
+const MAX_AREAS = 8;  // 검색에 쓸 지역 이름 수 (서버 호출 횟수 = 지역 이름 수 × 검색어 수)
+const DEFAULT_PLACE_WORD = '포켓몬카드'; // 입력칸이 비어 있을 때 쓰는 검색어
+const EXTRA_PLACE_WORD = '무인문구점';   // 포켓몬 카드를 찾을 때 함께 찾는 곳(포켓몬 카드를 파는 경우가 많다)
+
+// 검색어 목록을 정한다: 포켓몬 카드를 찾는 경우에만 무인문구점도 함께 찾는다
+const placeWords = keyword => keyword.replace(/\s+/g, '').includes('포켓몬') ? [keyword, EXTRA_PLACE_WORD] : [keyword];
+console.assert(placeWords('포켓몬 카드').length === 2 && placeWords('레고').length === 1, 'placeWords');
+let map = null;       // 지도(Leaflet)
+
+// 점포 주소에서 검색에 쓸 지역 이름을 꺼낸다: "경기도 수원시 영통구 … (이의동)" → { gu: '수원 영통구', dong: '수원 이의동' }
+function areaNames(address) {
+  const t = address.split(' ');
+  const seoul = t[0].startsWith('서울');
+  const city = seoul ? '서울' : (t[1] || '').replace(/시$/, '');
+  const gu = seoul ? t[1] : t[2];
+  const dong = (address.match(/\(([가-힣0-9]+동)/) || [])[1];
+  return { gu: gu ? `${city} ${gu}` : null, dong: dong ? `${city} ${dong}` : null };
+}
+console.assert(areaNames('경기도 수원시 영통구 웰빙타운로49번길 36, (이의동)').gu === '수원 영통구', 'areaNames: 구');
+console.assert(areaNames('서울 강남구 테헤란로 101, A동 10호(역삼1동 821-1)').dong === '서울 역삼1동', 'areaNames: 동');
+
+async function runPlaces(keyword) {
+  setBusy(true);
+  $('status').textContent = '내 위치를 확인하는 중...';
+  me = await locate();
+  if (!me) {
+    setBusy(false);
+    $('status').textContent = '내 위치를 알 수 없어 조회하지 못했습니다. 브라우저에서 이 사이트의 위치 사용을 허용한 뒤 다시 눌러 주세요.';
+    return;
+  }
+
+  // 내 주변(10km 안) 점포들의 주소에서 지역 이름을 가까운 순으로 모은다: 구 이름 먼저, 그다음 동 이름
+  const near = catalog.stores
+    .map(s => ({ s, d: distanceM(me, [s.lat, s.lng]) }))
+    .filter(x => x.d <= RADIUS)
+    .sort((a, b) => a.d - b.d);
+  const gus = [], dongs = [];
+  for (const { s } of near) {
+    const n = areaNames(s.address);
+    if (n.gu && !gus.includes(n.gu)) gus.push(n.gu);
+    if (n.dong && !dongs.includes(n.dong)) dongs.push(n.dong);
+  }
+  const areas = [...gus.slice(0, 4), ...dongs].slice(0, MAX_AREAS);
+
+  // 검색 목록: 지역 이름 × 검색어
+  const words = placeWords(keyword);
+  const searches = areas.flatMap(area => words.map(word => ({ area, word })));
+
+  const found = new Map(); // "이름+주소" → 장소 (같은 곳이 여러 번 나오면 하나로)
+  let done = 0, failedCalls = 0;
+  showProgress(0, searches.length, '주변 판매처 찾는 중');
+  await pool(searches, async ({ area, word }) => {
+    try {
+      const d = await callTool('places_search_nearby', { location: area, keyword: word, category: 'all', limit: 5 });
+      for (const p of d.places) {
+        const place = { name: p.name, category: p.category, address: p.roadAddress || p.address, lat: Number(p.latitude), lng: Number(p.longitude), via: [] };
+        place.distance = distanceM(me, [place.lat, place.lng]);
+        if (!(place.distance <= RADIUS)) continue; // 10km 밖이거나 좌표가 없는 곳은 뺀다
+        const kept = found.get(place.name + place.address) || place;
+        if (!kept.via.includes(word)) kept.via.push(word); // 어떤 검색어로 찾았는지 적어 둔다
+        found.set(place.name + place.address, kept);
+      }
+    } catch (e) { failedCalls++; }
+    done++;
+    showProgress(done, searches.length, `${area} ${word} 검색 중`);
+  });
+  setBusy(false);
+
+  const list = [...found.values()].sort((a, b) => a.distance - b.distance);
+  $('status').textContent = areas.length === 0 ? '내 위치 10km 안에 저장된 점포가 없어 주변 지역 이름을 알 수 없습니다. 서울 서초·강남·송파·중구, 수원, 분당 근처에서만 쓸 수 있습니다.'
+    : failedCalls === searches.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
+  $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16);
+  showMain('places');
+  toResult();
+  renderPlaces(list, words, areas);
+  if (resetAfterStop) { resetAfterStop = false; $('reset-btn').click(); } // 찾는 중에 [초기화]를 눌렀으면
+}
+
+// 주변 판매처를 지도와 목록으로 그린다
+function renderPlaces(list, words, areas) {
+  const keyword = words[0];
+  $('places-title').textContent = `내 위치 10km 안의 ${words.map(w => `"${w}"`).join(' · ')} ${list.length}곳`;
+  $('places-note').textContent = list.length
+    ? '네이버 지역 검색 결과를 가까운 순으로 보여 줍니다. 지역 이름 하나에 5곳까지만 나와서 전부는 아닐 수 있고, 재고는 알 수 없습니다. 지도 바탕은 오픈스트리트맵입니다.'
+    : '10km 안에서 검색된 곳이 없습니다. 검색어를 바꿔 보거나 아래 링크로 네이버 지도에서 직접 찾아보세요.';
+  // 네이버 지도 전체 결과로 가는 링크: 가장 가까운 지역 이름 + 검색어 (내 좌표는 넣지 않는다)
+  $('naver-link').href = 'https://map.naver.com/p/search/' + encodeURIComponent(`${areas[0] || ''} ${keyword}`.trim());
+
+  // 지도: Leaflet(CDN 에서 불러온 지도 라이브러리)이 준비돼 있을 때만 그린다
+  const markers = [];
+  $('map').hidden = !window.L;
+  if (window.L) {
+    if (map) map.remove(); // 이전 지도를 지우고 새로 만든다
+    map = L.map('map');
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const circle = L.circle(me, { radius: RADIUS, color: '#111111', weight: 2, fillOpacity: 0.04 }).addTo(map);
+    L.circleMarker(me, { radius: 8, color: '#111111', fillColor: '#ffd23f', fillOpacity: 1 }).addTo(map).bindTooltip('내 위치');
+    for (const p of list) {
+      // 말풍선 내용은 글자로만 넣는다(textContent)
+      const box = el('div');
+      box.append(el('strong', p.name), el('br'), el('span', `${p.via.join(', ')} · ${p.address} · ${distanceLabel(p.distance)}`));
+      markers.push(L.marker([p.lat, p.lng]).addTo(map).bindPopup(box));
+    }
+    map.fitBounds(list.length ? L.latLngBounds([me, ...list.map(p => [p.lat, p.lng])]).pad(0.2) : circle.getBounds());
+  }
+
+  // 목록: 누르면 지도에서 그 곳의 말풍선이 열린다
+  $('places-list').replaceChildren(...list.map((p, i) => {
+    const li = el('li');
+    const btn = el('button', '', 'store');
+    btn.type = 'button';
+    btn.append(el('strong', p.name), el('span', p.address, 'where'), el('span', distanceLabel(p.distance), 'where'));
+    const tags = el('span', '', 'stocks');
+    for (const word of p.via) tags.append(el('span', word, 'stock in')); // 어떤 검색어로 찾은 곳인지
+    tags.append(el('span', p.category || '분류 없음', 'stock'));
+    btn.append(tags);
+    btn.addEventListener('click', () => {
+      if (!markers[i]) return;
+      map.setView([p.lat, p.lng], 16);
+      markers[i].openPopup();
+      $('map').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    const link = el('a', '네이버 지도에서 보기');
+    link.href = 'https://map.naver.com/p/search/' + encodeURIComponent(p.name);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    li.append(btn, link);
+    return li;
+  }));
+}
+
+// ---------- 5-2b. [도감 지도] 탭: 포켓몬 카드 도감 판매처 지도(새 탭) ----------
+// [도감 지도] 탭의 버튼을 누르면 포켓몬 카드 도감(dogam.app)의 판매처·재고 지도를 새 탭으로 연다.
 // 도감 사이트는 다른 페이지 안에 넣을 수 없게 막혀 있어(X-Frame-Options: DENY) 새 탭으로 연다.
 // 내 위치는 약 1km 단위(소수 둘째 자리)로 흐리게 만들어 넘기고, 위치를 못 받으면 좌표 없이 연다.
-// (2026-10-22 이전의 자체 판매처 지도 — 네이버 지역 검색 + Leaflet 지도 — 는 이 기능으로 바꾸며 지웠다)
 const DOGAM_SHOPS = 'https://www.dogam.app/shops';
 const blur = n => Math.round(n * 100) / 100; // 소수 둘째 자리 = 위도 약 1.1km, 경도 약 0.9km
 console.assert(blur(37.301334) === 37.3 && blur(127.029441) === 127.03, 'blur');
@@ -594,20 +729,20 @@ console.assert(blur(37.301334) === 37.3 && blur(127.029441) === 127.03, 'blur');
 const dogamUrl = (pos, zoom) => DOGAM_SHOPS + '#' + (pos ? `c=${blur(pos[1])}%2C${blur(pos[0])}%2C${zoom}&` : '') + 'k=stock';
 console.assert(dogamUrl([37.30133, 127.02944], 12) === DOGAM_SHOPS + '#c=127.03%2C37.3%2C12&k=stock' && dogamUrl(null, 12) === DOGAM_SHOPS + '#k=stock', 'dogamUrl');
 
-function openDogam() {
-  // 위치를 묻는 동안 기다렸다가 열면 브라우저가 새 탭을 막을 수 있어, 누르자마자 빈 탭을 먼저 연다
-  const tab = window.open('', '_blank');
-  $('status').textContent = '내 위치를 확인하는 중…';
+// [도감 지도 열기 ↗]는 미리 주소를 넣어 둔 진짜 링크다(한 번 누르면 바로 새 탭).
+// 누른 뒤에 위치를 묻고 주소를 만들면 브라우저가 새 탭을 막아 한 번 더 눌러야 했다(2026-10-22 고침).
+// 그래서 [도감 지도] 탭을 처음 열 때 위치를 받아 주소를 만들어 둔다. 받기 전에는 좌표 없는 주소로 열린다.
+let dogamReady = false;
+function prepareDogam() {
+  const link = $('dogam-btn');
+  link.href = dogamUrl(null, 12);
+  if (dogamReady) return;
+  dogamReady = true;
+  $('dogam-note').textContent = '내 위치를 확인하는 중… (확인 전에 누르면 지도 처음 화면으로 열립니다)';
   locate().then(pos => {
-    const url = dogamUrl(pos, narrow.matches ? 11 : 12);
-    if (tab) { tab.opener = null; tab.location.href = url; } // opener = null: 새 탭이 이 페이지를 건드리지 못하게
-    const link = el('a', '도감 지도 열기 ↗');
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    $('status').replaceChildren(
-      (tab ? '포켓몬 카드 도감 판매처 지도를 새 탭에서 열었습니다. ' : '브라우저가 새 탭을 막았습니다. ')
-      + (pos ? '(내 위치는 약 1km 단위로 흐리게 보냈습니다) ' : '(내 위치를 알 수 없어 지도 처음 화면으로 엽니다) '), link);
+    link.href = dogamUrl(pos, narrow.matches ? 11 : 12);
+    $('dogam-note').textContent = pos ? '내 위치 주변(반경 약 10km)으로 엽니다. 내 위치는 약 1km 단위로 흐리게 보냅니다.'
+      : '내 위치를 알 수 없어 지도 처음 화면으로 엽니다.';
   });
 }
 
@@ -1222,6 +1357,93 @@ function loadBoard() {
       $('board-products').replaceChildren();
     });
 }
+
+// ---------- 5-3c. [스캐너] 탭: 번호나 이름으로 카드를 찾아 시세 조회 ----------
+// 카드 아래 모서리 번호(예: 125/098)나 이름을 적으면 16개 팩 카드에서 찾아, 우리 원화 시세와 함께
+// [TCG Vault 시세 ↗](TCG Vault 웹 시세 검색, 영문판·TCGplayer 시세)를 보여 준다. TCG Vault 는 다른 페이지에 넣을 수 없어 새 탭으로 연다.
+const TCGVAULT = 'https://tcgvault.io/ko/pokemon-card-value/?q=';
+const SCAN_MAX = 12; // 결과는 12장까지(카드마다 시세를 1번씩 불러온다)
+
+// 입력에서 번호를 읽는다: "125/098" → { no: 125, total: 98 }, "125" → { no: 125, total: null }, 이름이면 null
+function parseCardNo(text) {
+  const m = text.trim().match(/^#?\s*(\d{1,3})\s*(?:\/\s*(\d{1,3}))?$/);
+  return m ? { no: +m[1], total: m[2] ? +m[2] : null } : null;
+}
+console.assert(JSON.stringify(parseCardNo(' 125 / 098 ')) === '{"no":125,"total":98}' && parseCardNo('125').total === null && parseCardNo('뮤츠 ex') === null, 'parseCardNo');
+
+function findCards(text) {
+  const all = cardData.packs.flatMap(p => (p.regular || []).concat(p.cards));
+  const n = parseCardNo(text);
+  if (n) return all.filter(c => { const [a, b] = c.no.split('/').map(Number); return a === n.no && (n.total === null || b === n.total); });
+  const word = norm(text);
+  return word ? all.filter(c => norm(`${c.name}${c.jpName}${c.species || ''}`).includes(word)) : [];
+}
+
+// TCG Vault 검색어(영문 이름 + 번호). 영어 이름을 알 수 없으면 null
+const vaultCache = new Map();
+function vaultQuery(c) {
+  if (!vaultCache.has(c)) vaultCache.set(c, (async () => {
+    if (c.lang === 'en') return `${c.jpName} ${+c.no.split('/')[0]}`; // 영어판 팩: 원래 이름이 영어
+    const enId = c.imageLang === 'en' && enIdOf(c.image);
+    if (enId) { // 영어판 그림을 쓰는 카드: 그 영어판 카드의 이름과 번호
+      const d = await fetch(`https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(enId)}`).then(r => r.ok ? r.json() : null);
+      return d ? `${d.name} ${+d.localId}` : null;
+    }
+    // 일본어판 그림만 있는 카드: 포켓몬 영어 이름(+ex)으로 찾는다
+    const d = await fetch(`https://api.tcgdex.net/v2/ja/cards/${encodeURIComponent(c.id)}`).then(r => r.ok ? r.json() : null);
+    const dex = d && d.dexId && d.dexId[0];
+    if (!dex) return null; // 트레이너스·에너지 등: 영어 이름을 모른다
+    const sp = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${dex}`).then(r => r.ok ? r.json() : null);
+    const en = sp && (sp.names.find(x => x.language.name === 'en') || {}).name;
+    return en ? en + (/ex$/i.test(c.jpName) ? ' ex' : '') : null;
+  })().catch(() => { vaultCache.delete(c); return null; }));
+  return vaultCache.get(c);
+}
+
+function scanRow(c, fx) {
+  const li = el('li');
+  const pic = pickButton(c, 'card-pick');
+  if (c.image) pic.append(cardImage(c)); else pic.append(el('span', '그림 없음', 'blank'));
+  const info = el('div', '', 'scan-info');
+  const price = el('p', '시세 불러오는 중…', 'scan-price');
+  info.append(el('strong', cardTitle(c)), el('small', c.packName), cardMeta(c), price);
+  const more = el('button', '자세히', 'scan-more');
+  more.type = 'button';
+  more.addEventListener('click', () => openCard(c));
+  // [TCG Vault 시세 ↗]: 미리 주소를 넣어 둔 진짜 링크(한 번 누르면 바로 새 탭). 영문 검색어를 받는 동안은 "준비 중"
+  const vault = el('a', 'TCG Vault 준비 중…', 'scan-vault');
+  vault.target = '_blank';
+  vault.rel = 'noopener';
+  vaultQuery(c).then(q => {
+    if (!q) { vault.replaceWith(el('span', '영문 정보 없음', 'scan-vault none')); return; }
+    vault.href = TCGVAULT + encodeURIComponent(q);
+    vault.textContent = 'TCG Vault 시세 ↗';
+  });
+  const btns = el('div', '', 'scan-btns');
+  btns.append(more, vault);
+  info.append(btns);
+  li.append(pic, info);
+  cardPrice(c).then(p => {
+    if (!p) { price.textContent = '시세 자료 없음'; return; }
+    price.replaceChildren(el('b', priceText(p, fx)));
+    const t = trendBadge(p);
+    if (t) price.append(' ', t);
+  });
+  return li;
+}
+
+$('scan-form').addEventListener('submit', async e => {
+  e.preventDefault(); // 폼을 보내지 않고 이 자리에서 찾는다
+  const text = $('scan-input').value.trim();
+  if (!cardData) { $('scan-note').textContent = '카드 목록을 아직 불러오지 못했습니다.'; return; }
+  if (!text) { $('scan-note').textContent = '카드 번호(예: 125/098)나 이름을 적어 주세요.'; $('scan-input').focus(); return; }
+  const found = findCards(text);
+  $('scan-note').textContent = found.length
+    ? `"${text}" 맞는 카드 ${found.length}장` + (found.length > SCAN_MAX ? ` · 앞 ${SCAN_MAX}장만 보여 줍니다. 번호를 "125/098"처럼 적으면 더 좁혀집니다.` : '')
+    : '맞는 카드가 없습니다. 번호는 "125/098"처럼, 이름은 "뮤츠 ex"처럼 적어 보세요.';
+  const fx = await krwRate('EUR');
+  $('scan-results').replaceChildren(...found.slice(0, SCAN_MAX).map(c => scanRow(c, fx)));
+});
 
 // ---------- 5-4. 편의점 연결 상태 ----------
 // 페이지가 열릴 때 편의점마다 흔한 상품(삼다수)을 강남역 기준으로 한 번씩 조회해 보고,

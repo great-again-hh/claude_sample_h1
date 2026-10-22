@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <!-- data-news-api = 소식 중계 프로그램(Cloudflare Worker) 주소. 비어 있으면 첫 화면 소식 게시판을 숨긴다 -->
-<html lang="ko" data-version="33" data-news-api="https://rough-bush-3101.pkcard-finder.workers.dev/">
+<html lang="ko" data-version="36" data-news-api="https://rough-bush-3101.pkcard-finder.workers.dev/">
 <head>
   <meta charset="UTF-8">
   <!-- 휴대폰에서 화면 폭에 맞게 보이도록 하는 설정 -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>포켓몬 카드 재고조회</title>
-  <link rel="stylesheet" href="style.css?v=33">
+  <!-- Leaflet = 여러 곳에 핀을 꽂을 수 있는 지도 라이브러리. CDN(공개 저장소)에서 불러온다.
+       integrity = 받은 파일이 바뀌지 않았는지 확인하는 지문 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
   <!-- 왼쪽 사이드바: 제목, 조회 버튼, 조회 상태, 권역 체크박스 -->
@@ -58,7 +62,7 @@
     <hr class="step">
     <h2>② 네이버 지도</h2>
     <div class="checks">
-      <label><input type="checkbox" id="naver-mode"><span>내 주변 판매처 찾기</span><small>도감 지도 ↗</small></label>
+      <label><input type="checkbox" id="naver-mode"><span>내 주변 판매처 찾기</span><small>반경 10km</small></label>
     </div>
 
     <!-- 조회 방식 2: 편의점 재고. 편의점 체크박스는 여러 개를 고를 수 있다. script.js 가 채운다 -->
@@ -75,7 +79,7 @@
     <p class="notice">조회한 순간의 값이니 방문 전 점포에 확인하세요.</p>
     <details class="info">
       <summary>ⓘ 조회 안내</summary>
-      <p>네이버 지도와 편의점 중 한 가지 방식으로만 조회합니다. 내 위치는 이 브라우저 안에서 거리 계산에 쓰고, 네이버 지도(포켓몬 카드 도감 판매처 지도)를 열 때만 약 1km 단위로 흐리게 보냅니다.</p>
+      <p>네이버 지도와 편의점 중 한 가지 방식으로만 조회합니다. 내 위치는 이 브라우저 안에서 거리 계산에 쓰고, [도감 지도] 탭에서 도감 지도를 열 때만 약 1km 단위로 흐리게 보냅니다.</p>
     </details>
   </header>
 
@@ -84,10 +88,12 @@
     <nav class="main-tabs" role="tablist" aria-label="화면 고르기">
       <button id="tab-main" type="button" role="tab" aria-selected="true">재고·카드</button>
       <button id="tab-exchange" type="button" role="tab" aria-selected="false">거래소</button>
+      <button id="tab-dogam" type="button" role="tab" aria-selected="false">도감 지도</button>
+      <button id="tab-scanner" type="button" role="tab" aria-selected="false">스캐너</button>
     </nav>
 
     <!-- 거래소: 도감 사이트는 다른 페이지 안에 넣을 수 없게 막혀 있어(X-Frame-Options: DENY) 새 탭으로 연다 -->
-    <section id="exchange" hidden>
+    <section id="exchange" class="tab-panel" hidden>
       <div class="exchange-card">
         <p class="exchange-kicker">TCG MARKET</p>
         <p class="exchange-title">포켓몬 카드 도감 거래소</p>
@@ -95,6 +101,36 @@
         <a class="exchange-btn" href="https://www.dogam.app/market" target="_blank" rel="noopener">거래소 열기 ↗</a>
         <small>dogam.app · 이 웹앱과 관계없는 외부 서비스입니다.</small>
       </div>
+    </section>
+
+    <!-- 도감 지도: 포켓몬 카드 도감의 판매처·재고 지도를 내 위치 주변(반경 약 10km)으로 새 탭에서 연다 -->
+    <section id="dogam" class="tab-panel" hidden>
+      <div class="exchange-card">
+        <p class="exchange-kicker">SHOP MAP</p>
+        <p class="exchange-title">포켓몬 카드 도감 판매처 지도</p>
+        <p>카드샵·카드 자판기와 편의점·마트 재고를 지도에서 볼 수 있는 외부 사이트입니다. 내 위치 주변(반경 약 10km)으로 새 탭에서 엽니다.
+           내 위치는 약 1km 단위로 흐리게 보내고, 위치를 허용하지 않으면 지도 처음 화면으로 엽니다.</p>
+        <a id="dogam-btn" class="exchange-btn" target="_blank" rel="noopener" href="https://www.dogam.app/shops#k=stock">도감 지도 열기 ↗</a>
+        <p id="dogam-note" class="dogam-note" aria-live="polite"></p>
+        <small>dogam.app · 이 웹앱과 관계없는 외부 서비스입니다.</small>
+      </div>
+    </section>
+
+    <!-- 스캐너: 카드 번호나 이름으로 카드를 찾아 시세를 본다(우리 원화 시세 + TCG Vault 웹 시세 검색 새 탭) -->
+    <section id="scanner" class="tab-panel" hidden>
+      <div class="exchange-card">
+        <p class="exchange-kicker">CARD SCANNER</p>
+        <p class="exchange-title">카드 시세 조회</p>
+        <p>카드 아래쪽 모서리의 번호(예: 125/098)나 카드 이름을 적고 [시세 조회]를 누르세요.
+           원화 시세(Cardmarket)를 바로 보여 주고, [TCG Vault 시세 ↗]로 영문판 TCGplayer 시세를 새 탭에서 볼 수 있습니다.</p>
+        <form id="scan-form" class="scan-form" role="search">
+          <label for="scan-input" class="sr-only">카드 번호 또는 이름</label>
+          <input id="scan-input" type="search" placeholder="예: 125/098 또는 뮤츠 ex" maxlength="40" autocomplete="off">
+          <button type="submit">시세 조회</button>
+        </form>
+        <p id="scan-note" class="dogam-note" aria-live="polite"></p>
+      </div>
+      <ul id="scan-results" class="scan-results"></ul>
     </section>
 
     <!-- 편의점 연결 상태: 페이지가 열릴 때 script.js 가 편의점마다 시험 조회를 해 보고 박스 4개를 채운다 -->
@@ -138,6 +174,15 @@
           <ul id="board-products" class="board-products"></ul>
         </div>
       </div>
+    </section>
+
+    <!-- 네이버 지도 방식의 결과: 내 위치 10km 안의 판매처를 지도와 목록으로 -->
+    <section id="places" hidden>
+      <h2 id="places-title"></h2>
+      <p id="places-note"></p>
+      <p><a id="naver-link" target="_blank" rel="noopener">네이버 지도에서 전체 결과 보기 ↗</a></p>
+      <div id="map" role="region" aria-label="주변 판매처 지도"></div>
+      <ul id="places-list"></ul>
     </section>
 
     <!-- 카드 조회의 결과: 고른 팩마다 힛카드를 보여 준다 -->
@@ -192,12 +237,14 @@
     <details class="info">
       <summary>ⓘ 출처와 안내</summary>
     <p>편의점마다 입력한 검색어로 찾은 첫 번째 상품의 재고를 조회합니다. 어떤 상품이 골라졌는지는 요약 카드에 나옵니다.
-       네이버 지도는 포켓몬 카드 도감(dogam.app)의 판매처·재고 지도를 새 탭으로 엽니다.
+       네이버 지도 방식은 네이버 지역 검색 결과이며 재고는 알 수 없습니다.
        이마트24는 재고 기록이 없는 점포가 "확인불가"로 집계됩니다.</p>
     <p>출처: 공개 재고조회 서버 mcp.aka.page (각 편의점 앱 데이터 기반, 비공식 조회 결과). <span id="built-at"></span> <span id="cards-source"></span></p>
     </details>
   </footer>
 
-  <script src="script.js?v=33"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="script.js?v=36"></script>
 </body>
 </html>
