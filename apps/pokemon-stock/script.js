@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '36';
+const VERSION = '38';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -519,7 +519,7 @@ function showMain(which) {
 }
 
 // 본문 탭: [재고·카드] = 지금까지의 화면, [거래소]·[도감 지도] = 포켓몬 카드 도감 안내(새 탭으로 연다)
-const TABS = ['main', 'exchange', 'dogam', 'scanner'];
+const TABS = ['main', 'exchange', 'dogam', 'scanner', 'blog'];
 function setTab(which) {
   document.body.classList.toggle('tab-other', which !== 'main'); // CSS 가 [재고·카드] 쪽 영역을 숨긴다
   for (const t of TABS) {
@@ -527,7 +527,7 @@ function setTab(which) {
     if (t !== 'main') $(t).hidden = t !== which;
   }
 }
-for (const t of TABS) $('tab-' + t).addEventListener('click', () => { setTab(t); if (t === 'dogam') prepareDogam(); });
+for (const t of TABS) $('tab-' + t).addEventListener('click', () => { setTab(t); if (t === 'dogam') prepareDogam(); if (t === 'blog') loadBlog(); });
 
 // 휴대폰(한 열 화면)에서는 결과가 사이드바 아래에 있어서, 조회를 시작하면 결과 쪽으로 내려 준다
 const narrow = matchMedia('(max-width: 700px)');
@@ -1444,6 +1444,62 @@ $('scan-form').addEventListener('submit', async e => {
   const fx = await krwRate('EUR');
   $('scan-results').replaceChildren(...found.slice(0, SCAN_MAX).map(c => scanRow(c, fx)));
 });
+
+// ---------- 5-3d. [블로그] 탭: TCG Vault 블로그 최신 글 미리보기 ----------
+// 블로그는 다른 페이지 안에 넣을 수 없어(X-Frame-Options: SAMEORIGIN), 목록 페이지를 읽어 글 제목·요약·발행일·대표 그림만 보여 주고
+// 누르면 그 글을 새 탭으로 연다. 이 페이지는 다른 사이트의 읽기를 허용해서(access-control-allow-origin: *) 중계 없이 바로 읽는다.
+// 받은 페이지의 스크립트는 실행하지 않는다(DOMParser 는 글자만 해석한다). 글자는 textContent 로만 넣고, 주소는 tcgvault.io 것만 쓴다.
+const BLOG_URL = 'https://tcgvault.io/ko/blog/';
+const BLOG_MAX = 12;
+let blogLoaded = false;
+
+// 목록 페이지 HTML → [{ url, title, summary, date, image }]
+function parseBlog(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const ok = u => { try { const x = new URL(u, BLOG_URL); return x.protocol === 'https:' && x.hostname === 'tcgvault.io' ? x.href : null; } catch (e) { return null; } };
+  return [...doc.querySelectorAll('a[href]')].map(a => {
+    const title = a.querySelector('h2');
+    const url = ok(a.getAttribute('href'));
+    if (!title || !url || !/\/ko\/blog\/[^/]+\/?$/.test(new URL(url).pathname)) return null;
+    const img = a.querySelector('img');
+    // 대표 그림은 여러 크기 중 가장 작은 것(srcset 의 첫 번째)
+    const small = img && ((img.getAttribute('srcset') || '').split(',')[0].trim().split(' ')[0] || img.getAttribute('src'));
+    const time = a.querySelector('time');
+    const summary = [...a.querySelectorAll('p')].filter(p => !(time && p.contains(time))).map(p => p.textContent.trim()).filter(Boolean).pop() || ''; // 발행일 칸이 아닌 마지막 문단
+    return { url, title: title.textContent.trim(), summary, date: time ? time.getAttribute('datetime') : null, image: small ? ok(small) : null };
+  }).filter(Boolean);
+}
+console.assert(parseBlog('<ul><li><a href="/ko/blog/x-y/"><img src="/_astro/a.webp" srcset="/_astro/s.webp 345w, /_astro/b.webp 988w"><p><time datetime="2026-10-02T00:00:00.000Z">발행</time></p><h2>제목</h2><p>요약</p></a></li><li><a href="https://evil.example/ko/blog/z/"><h2>나쁜</h2></a></li></ul>')
+  .map(b => `${b.title}|${b.summary}|${b.date.slice(0, 10)}|${b.image}`).join() === '제목|요약|2026-10-02|https://tcgvault.io/_astro/s.webp', 'parseBlog');
+
+function loadBlog() {
+  if (blogLoaded) return;
+  blogLoaded = true;
+  $('blog-note').textContent = '최신 글을 불러오는 중…';
+  fetch(BLOG_URL, { signal: AbortSignal.timeout(15000) })
+    .then(res => { if (!res.ok) throw new Error(res.status); return res.text(); })
+    .then(html => {
+      const posts = parseBlog(html).slice(0, BLOG_MAX);
+      if (!posts.length) throw new Error('글 없음');
+      $('blog-list').replaceChildren(...posts.map(p => {
+        const li = el('li');
+        const a = el('a');
+        a.href = p.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        if (p.image) { const img = el('img'); img.src = p.image; img.alt = ''; img.loading = 'lazy'; a.append(img); }
+        if (p.date) a.append(el('small', p.date.slice(0, 10).replace(/-/g, '.') + ' 발행'));
+        a.append(el('strong', p.title), el('span', p.summary));
+        li.append(a);
+        return li;
+      }));
+      $('blog-note').textContent = `TCG Vault 블로그의 최신 글 ${posts.length}개입니다. 누르면 그 글이 새 탭으로 열립니다.`;
+    })
+    .catch(() => {
+      blogLoaded = false; // 다음에 탭을 열 때 다시 시도
+      $('blog-note').textContent = '최신 글을 불러오지 못했습니다. 위의 [블로그 열기 ↗]로 보세요.';
+    });
+}
 
 // ---------- 5-4. 편의점 연결 상태 ----------
 // 페이지가 열릴 때 편의점마다 흔한 상품(삼다수)을 강남역 기준으로 한 번씩 조회해 보고,
