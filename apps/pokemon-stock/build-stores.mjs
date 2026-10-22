@@ -1,5 +1,6 @@
 // 점포 목록 파일(stores.json)을 만드는 스크립트. 웹페이지가 아니라 내 컴퓨터에서 한 번씩 실행한다.
 // 실행:  node build-stores.mjs      (점포가 새로 생기거나 없어졌을 때 다시 실행하면 목록이 갱신된다)
+//        node build-stores.mjs guri  ← 적은 권역만 새로 모으고, 나머지 권역은 지금 stores.json 의 목록을 그대로 쓴다
 //
 // 하는 일
 // 1. 권역(구)마다 CU, GS25, 이마트24 점포를 공개 재고조회 서버에서 모은다. (세븐일레븐은 build-seven.mjs)
@@ -22,7 +23,13 @@ const REGIONS = [
   { id: 'paldal', group: '수원', name: '팔달구', area1: '경기도', area2: '수원시 팔달구', match: ['수원', '팔달구'], seven: '팔달', seeds: [[37.2660, 127.0000], [37.2619, 127.0309]] },
   { id: 'yeongtong', group: '수원', name: '영통구', area1: '경기도', area2: '수원시 영통구', match: ['수원', '영통구'], seven: '영통', seeds: [[37.2886, 127.0516], [37.2515, 127.0712]] },
   { id: 'bundang', group: '판교·분당', name: '분당구', area1: '경기도', area2: '성남시 분당구', match: ['성남', '분당구'], seven: '분당', seeds: [[37.3948, 127.1112], [37.3670, 127.1081], [37.3849, 127.1233]] },
+  // 구리시는 구가 없는 시라 시 전체가 한 권역이다. 시작 좌표: 구리역, 갈매역, 토평동
+  { id: 'guri', group: '구리', name: '구리시', area1: '경기도', area2: '구리시', match: ['구리시'], seven: '구리', seeds: [[37.6034, 127.1435], [37.6339, 127.1148], [37.5915, 127.1530]] },
 ];
+// 권역 id 를 적어 실행하면 그 권역만 새로 모은다. 예: node build-stores.mjs guri
+const only = process.argv.slice(2);
+const TARGET = only.length ? REGIONS.filter(r => only.includes(r.id)) : REGIONS;
+if (only.length && TARGET.length !== only.length) throw new Error('모르는 권역 id: ' + only.filter(id => !REGIONS.some(r => r.id === id)).join(', '));
 
 // "좌표 주변 점포"를 주는 편의점의 조회 특성.
 //   listRadius = 점포 찾기 1회가 덮는 반경(m), cap = 1회에 주는 최대 점포 수(없으면 0)
@@ -99,7 +106,7 @@ const stores = []; // 모든 편의점의 대상 권역 점포가 여기에 모�
 const prevRegions = existsSync(OUT) ? JSON.parse(readFileSync(OUT, 'utf8')).regions : []; // 지난번에 저장한 권역 정보
 
 // ---------- 이마트24: 구 이름으로 40곳씩 페이지를 넘기며 모은다 ----------
-for (const r of REGIONS) {
+for (const r of TARGET) {
   let count = 0;
   for (let page = 1; page <= 15; page++) {
     let list;
@@ -121,7 +128,7 @@ for (const r of REGIONS) {
 for (const [chain, cfg] of Object.entries(NEARBY)) {
   const found = new Map();  // 점포 코드 → 점포
   const centers = [];       // 이미 조회한 지점
-  const queue = REGIONS.flatMap(r => r.seeds);
+  const queue = TARGET.flatMap(r => r.seeds);
   // 예비 지점: 먼저 모은 다른 편의점의 점포 위치. 점포 사이가 멀어 발판이 끊긴 동네를 메우는 데 쓴다
   // (편의점이 있는 동네에는 다른 편의점도 있기 쉽다).
   const spare = stores.map(s => [s.lat, s.lng]);
@@ -145,13 +152,14 @@ for (const [chain, cfg] of Object.entries(NEARBY)) {
     for (const s of list) {
       const p = [Number(s.latitude), Number(s.longitude)];
       const region = regionOf(s.address);
+      const target = region && TARGET.includes(region); // 이번에 새로 모으는 권역의 점포인가
       if (!found.has(s.storeCode)) found.set(s.storeCode, { chain, region: region && region.id, code: s.storeCode, name: s.storeName, address: clean(s.address), lat: p[0], lng: p[1] });
       // 대상 권역 안의 점포이고, 지금까지의 지점들과 충분히 멀면 다음 조회 지점으로 등록한다
-      if (region && [...centers, ...queue].every(q => dist(q, p) > need)) queue.push(p);
+      if (target && [...centers, ...queue].every(q => dist(q, p) > need)) queue.push(p);
     }
     if (centers.length % 20 === 0) log(`${chain} 점포 찾는 중: 지점 ${centers.length}곳 조회, 대기 ${queue.length}곳, 대상 권역 점포 ${[...found.values()].filter(s => s.region).length}곳`);
   }
-  const mine = [...found.values()].filter(s => s.region);
+  const mine = [...found.values()].filter(s => s.region && TARGET.some(r => r.id === s.region));
   stores.push(...mine);
   log(`${chain} 완료: 조회 ${centers.length}회(실패 ${failed}), 대상 권역 점포 ${mine.length}곳`);
 }
@@ -161,6 +169,8 @@ for (const [chain, cfg] of Object.entries(NEARBY)) {
 // ---------- 이번에 조회가 실패한 곳은 지난번에 저장한 목록을 그대로 쓴다 (실패했다고 목록이 비면 안 된다) ----------
 if (existsSync(OUT)) {
   const prev = JSON.parse(readFileSync(OUT, 'utf8')).stores;
+  // 일부 권역만 새로 모았으면, 나머지 권역의 점포(모든 편의점)는 지난번 목록을 그대로 쓴다
+  if (only.length) stores.push(...prev.filter(s => !only.includes(s.region)));
   for (const r of REGIONS) for (const chain of ['emart24', 'seveneleven']) {
     const old = prev.filter(s => s.chain === chain && s.region === r.id);
     if (old.length && !stores.some(s => s.chain === chain && s.region === r.id)) {

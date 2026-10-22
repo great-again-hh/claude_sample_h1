@@ -22,6 +22,7 @@ const SEVEN = {
   paldal: { word: '팔달', match: ['수원', '팔달구'] },
   yeongtong: { word: '영통', match: ['수원', '영통구'] },
   bundang: { word: '분당', match: ['성남', '분당구'] },
+  guri: { word: '구리', match: ['구리시', '구리시'] }, // match[1] = 길 이름을 찾기 시작할 행정 구역 이름
 };
 
 let calls = 0;
