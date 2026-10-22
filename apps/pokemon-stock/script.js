@@ -9,7 +9,7 @@
 // ---------- 0. 버전 확인 ----------
 // 브라우저에 예전 index.html 이 남아 있는데 script.js 만 새것이면 서로 어긋나 오류가 난다.
 // 두 파일에 같은 버전 번호를 적어 두고, 다르면 페이지를 한 번 새로 불러온다. (배포할 때 두 곳의 번호를 함께 올린다)
-const VERSION = '38';
+const VERSION = '39';
 if (document.documentElement.dataset.version !== VERSION && !sessionStorage.getItem('reloaded-' + VERSION)) {
   sessionStorage.setItem('reloaded-' + VERSION, '1'); // 같은 버전으로는 한 번만 새로 불러온다(무한 반복 방지)
   location.reload();
@@ -483,6 +483,7 @@ async function runStores(keywords, batch = null) {
   // 조회와 동시에 내 위치를 묻는다. 기다리지 않고, 위치를 알게 되면 그때 목록을 가까운 순으로 다시 그린다.
   locate().then(pos => { me = pos; if (result && !$('load-btn').disabled && !$('result').hidden) renderList(); });
   stopRequested = false;
+  setTab('main'); // 누르는 즉시 [재고·카드] 탭으로
   setBusy(true);
   const scope = batch ? `일괄 조회: 팩 ${keywords.length}개 · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`
     : `조회 상품: ${keywords.join(', ')} · 편의점: ${chains.map(c => c.name).join(', ')} · 권역: ${regions.map(r => r.name).join(', ')}`;
@@ -511,8 +512,8 @@ async function runStores(keywords, batch = null) {
 }
 
 // 메인 영역에는 결과 한 가지만 보인다: 'empty'(안내) / 'result'(편의점) / 'places'(네이버 지도) / 'cards'(힛카드)
+// 탭은 바꾸지 않는다: 조회 버튼을 누를 때 [재고·카드] 탭으로 옮기고, 조회 중에 다른 탭으로 가면 그대로 둔다
 function showMain(which) {
-  setTab('main'); // 조회 결과는 [재고·카드] 탭에 나온다
   for (const id of ['empty', 'result', 'places', 'cards']) $(id).hidden = id !== which;
   document.body.classList.toggle('has-result', which !== 'empty'); // 휴대폰의 [조건 ↑] [결과 ↓] 버튼을 보이게 한다
   $('board').hidden = which !== 'empty' || !boardReady; // 소식 게시판은 첫 화면에서만
@@ -526,6 +527,8 @@ function setTab(which) {
     $('tab-' + t).setAttribute('aria-selected', String(t === which));
     if (t !== 'main') $(t).hidden = t !== which;
   }
+  // 숨겨진 동안 만든 지도는 크기를 잘못 잡으므로, [재고·카드] 탭으로 돌아오면 다시 맞춘다
+  if (which === 'main' && map) setTimeout(() => map.invalidateSize(), 0);
 }
 for (const t of TABS) $('tab-' + t).addEventListener('click', () => { setTab(t); if (t === 'dogam') prepareDogam(); if (t === 'blog') loadBlog(); });
 
@@ -609,12 +612,20 @@ console.assert(areaNames('경기도 수원시 영통구 웰빙타운로49번길 
 console.assert(areaNames('서울 강남구 테헤란로 101, A동 10호(역삼1동 821-1)').dong === '서울 역삼1동', 'areaNames: 동');
 
 async function runPlaces(keyword) {
+  setTab('main'); // 누르는 즉시 [재고·카드] 탭으로 옮기고 "찾는 중" 화면을 보여 준다
+  $('places-title').textContent = '내 주변 판매처를 찾는 중…';
+  $('places-note').textContent = '';
+  $('places-list').replaceChildren();
+  $('map').hidden = true;
+  showMain('places');
+  toResult();
   setBusy(true);
   $('status').textContent = '내 위치를 확인하는 중...';
   me = await locate();
   if (!me) {
     setBusy(false);
     $('status').textContent = '내 위치를 알 수 없어 조회하지 못했습니다. 브라우저에서 이 사이트의 위치 사용을 허용한 뒤 다시 눌러 주세요.';
+    $('places-title').textContent = '내 위치를 알 수 없어 조회하지 못했습니다';
     return;
   }
 
@@ -660,7 +671,6 @@ async function runPlaces(keyword) {
     : failedCalls === searches.length ? '주변 판매처를 조회하지 못했습니다. 잠시 후 다시 눌러 주세요.' : '';
   $('fetched-at').textContent = '조회 시각 ' + new Date().toLocaleString('sv-SE').slice(0, 16);
   showMain('places');
-  toResult();
   renderPlaces(list, words, areas);
   if (resetAfterStop) { resetAfterStop = false; $('reset-btn').click(); } // 찾는 중에 [초기화]를 눌렀으면
 }
@@ -748,14 +758,22 @@ function prepareDogam() {
 
 // ---------- 5-3. 조회 방식 고르기와 초기화 ----------
 
-// 네이버 지도를 체크하면 편의점·권역 선택은 쓸 수 없게 잠근다(둘 중 하나만 조회한다)
+// 네이버 지도를 체크하면 편의점·권역 선택은 흐리게 보인다(둘 중 하나만 조회한다).
+// 예전에는 아예 잠갔는데, 다른 탭에 있다가 권역을 눌러도 반응이 없어 고장처럼 보였다(2026-10-22 고침).
+// 이제 흐린 편의점·권역을 누르면 네이버 지도를 끄고 편의점 재고 조회로 바꾼다.
 function applyMode() {
   const naver = $('naver-mode').checked;
   localStorage.setItem('pokemon-stock-naver', naver ? '1' : '');
-  for (const node of document.querySelectorAll('#chains input, #regions input, #regions button')) node.disabled = naver;
+  for (const box of [$('chains'), $('regions')]) box.classList.toggle('locked', naver);
   if (catalog) updateEstimate();
 }
 $('naver-mode').addEventListener('change', applyMode);
+for (const box of [$('chains'), $('regions')]) box.addEventListener('click', e => {
+  if (!$('naver-mode').checked || !e.target.closest('input, button')) return;
+  $('naver-mode').checked = false;
+  applyMode();
+  $('status').textContent = '네이버 지도를 끄고 편의점 재고 조회로 바꿨습니다.';
+}, true); // true = 체크가 바뀌기 전에 먼저 처리한다
 
 // [초기화] 버튼: 모든 선택을 풀고, 검색어는 기본값으로, 결과 화면은 처음 상태로 되돌린다
 // [초기화](집 모양): 모든 선택을 풀고 처음 화면 맨 위로 돌아간다. 조회 중이면 조회를 멈춘 뒤 초기화한다
@@ -776,6 +794,7 @@ $('reset-btn').addEventListener('click', () => {
   $('card-results').replaceChildren();
   $('cards-list').replaceChildren();
   if (cardDialog && cardDialog.open) cardDialog.close();
+  setTab('main'); // 처음 화면 = [재고·카드] 탭
   showMain('empty');
   applyPick();
   applyMode();
@@ -1261,6 +1280,7 @@ function renderHero() {
 // 팩을 고르지 않았으면 카드 검색칸만 보여 준다
 $('cards-btn').addEventListener('click', () => {
   if (!cardData) { $('status').textContent = '카드 목록(cards.json)을 불러오지 못했습니다.'; return; }
+  setTab('main'); // 누르는 즉시 [재고·카드] 탭으로
   const packs = $('pick-mode').checked ? checkedPacks() : [];
   $('status').textContent = '';
   $('cards-title').textContent = packs.length ? `힛카드 · ${packs.map(p => p.name).join(', ')}` : '카드 검색';
